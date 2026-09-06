@@ -6,12 +6,38 @@ A home security monitoring prototype. The idea: a camera watches your front door
 
 ## Run it
 
+### First-time setup
+
+**Step 1 — Install Node.js.** If you don't already have it, download it from [nodejs.org](https://nodejs.org) (pick the LTS version). This also installs `npm`, the tool used below.
+
+**Step 2 — Download the code:**
 ```bash
+git clone https://github.com/angper23/smarthal.git
+cd smarthal
+```
+
+**Step 3 — Install the project's dependencies** (the libraries the app is built on, like React):
+```bash
+npm install
+```
+This only needs to be done once. Run it again later only if `package.json` changes.
+
+**Step 4 — Start the app:**
+```bash
+npm run dev
+```
+This starts a local server and prints a URL — usually `http://localhost:5173`. Open that link in your browser to see the app.
+
+To stop the server, click into the terminal and press `Ctrl+C`.
+
+### Already have it cloned?
+
+Just grab the latest changes and start it up again:
+```bash
+git pull
 npm install
 npm run dev
 ```
-
-This installs the dependencies and starts a local dev server. Open the URL it prints in your terminal (usually `http://localhost:5173`) in your browser.
 
 ## How the app is put together
 
