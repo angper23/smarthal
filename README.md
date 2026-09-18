@@ -1,0 +1,130 @@
+# SmartHal
+
+A home security monitoring prototype. The idea: a camera watches your front door, detects when someone's there, and logs/alerts on it. Residents can be registered so the system can (eventually) tell them apart from strangers.
+
+**Status:** this is mostly a front-end prototype — there's no database, and most screens display fake, hardcoded data so the app *looks* finished for demo purposes. The Live Feed screen is the exception: it's backed by a small Flask server (`smarthal-backend/`) that streams a real IP camera into the browser, where `face-api.js` runs live face **detection** (noticing a face is there) — there's no face **recognition** yet (knowing *whose* face it is).
+
+## Run it
+
+### First-time setup
+
+**Step 1 — Install Node.js.** If you don't already have it, download it from [nodejs.org](https://nodejs.org) (pick the LTS version). This also installs `npm`, the tool used below.
+
+**Step 2 — Download the code:**
+```bash
+git clone https://github.com/angper23/smarthal.git
+cd smarthal
+```
+
+**Step 3 — Install the project's dependencies** (the libraries the app is built on, like React):
+```bash
+npm install
+```
+This only needs to be done once. Run it again later only if `package.json` changes.
+
+**Step 4 — Start the app:**
+```bash
+npm run dev
+```
+This starts a local server and prints a URL — usually `http://localhost:5173`. Open that link in your browser to see the app.
+
+To stop the server, click into the terminal and press `Ctrl+C`.
+
+The app itself will load fine at this point — you can navigate every screen. But the Live Feed screen's video will fail to load unless the backend below is also running.
+
+### Already have it cloned?
+
+Just grab the latest changes and start it up again:
+```bash
+git pull
+npm install
+npm run dev
+```
+
+### Backend (needed for the Live Feed screen)
+
+The Live Feed screen shows a real IP camera, not your laptop's webcam — it gets that video from a small Flask server. Setup and run instructions are in [`smarthal-backend/README.md`](smarthal-backend/README.md). You'll need the camera's RTSP URL (ask a teammate) to configure it. Without this running, every other screen still works — Live Feed will just show a "can't reach camera stream" message.
+
+### Running everything manually, step by step
+
+There's no single command that starts both pieces — you run two servers side by side in two separate terminal windows/tabs, and leave both open while you work.
+
+**Terminal 1 — the frontend** (from the project root, `smarthal/`):
+```bash
+npm install    # first time only, or after package.json changes
+npm run dev
+```
+Leave this running. It's serving the app at `http://localhost:5173`.
+
+**Terminal 2 — the backend** (do this the *first time only*, then just the "Run it" step after that):
+```bash
+cd smarthal-backend
+python3 -m venv venv && source venv/bin/activate   # first time only
+pip install -r requirements.txt                     # first time only
+cp .env.example .env                                 # first time only — then edit .env with the real RTSP_URL
+python app.py
+```
+Leave this running too. It's serving the camera stream at `http://localhost:5001`.
+
+**Then:** open `http://localhost:5173` in your browser. Every screen works with just Terminal 1 running; Live Feed additionally needs Terminal 2. To stop either one, click into its terminal and press `Ctrl+C`. Next time, skip the "first time only" lines in Terminal 2 — just `cd smarthal-backend && source venv/bin/activate && python app.py`.
+
+## How the app is put together
+
+It's a normal React app: each "screen" (page) is its own component file, and `routes.js` maps a URL to the screen that should render there. Clicking a button in the app just calls `navigate("/some-path")`, which swaps out the screen — there's no page reload, it all happens in the browser.
+
+The flow a user follows: **Login → Dashboard → (Live Feed / Event History / Register Resident / Alert Settings)**. Every screen other than the dashboard has a back button that returns you the way you came.
+
+## What's real vs. what's mocked
+
+- **Real:** the Live Feed screen streams video from a physical IP camera (via the `smarthal-backend` Flask server) and runs an AI model (`face-api.js`) in the browser to detect faces in that stream, drawing a box around each one it finds, live. It also shows whether the camera itself is currently reachable.
+- **Mocked — looks functional but isn't wired to anything real:**
+  - **Login** — typing anything and hitting submit logs you in. There's no password check, no account system.
+  - **Event History / Event Detail** — the list of past "detections" is a fixed array written directly in the code, not data from a camera or database.
+  - **Register Resident** — the form lets you type a name and "upload" a photo, but nothing is stored; hitting Save just pops an alert box and returns to the dashboard.
+  - **Alert Settings** — the toggles work visually (they flip on/off), but the value only lives in that screen's memory. Refresh the page and it's back to default.
+
+## File-by-file guide
+
+### Root config files
+These aren't app code — they configure the tools that build and run the app.
+- `index.html` — the one HTML page the whole app lives inside. React finds the empty `<div id="root">` in here and injects the entire UI into it.
+- `package.json` — lists every dependency the project needs (React, Tailwind, face-api.js, etc.) and defines the shortcut commands (`npm run dev`, `npm run build`).
+- `package-lock.json` — records the *exact* version of every dependency that was installed, so everyone on the team gets identical packages when they run `npm install`.
+- `vite.config.ts` — settings for Vite, the tool that runs the dev server and bundles the app for production.
+- `postcss.config.mjs` — plugs Tailwind CSS into the build process so the utility classes used throughout the screens (like `bg-gray-50`) actually generate real CSS.
+
+### App setup (`src/`)
+- `main.jsx` — the very first file that runs. It grabs the `<div id="root">` from `index.html` and tells React to render the app into it.
+- `app/App.tsx` — the top-level component. All it does is hand control over to the router so the correct screen shows up for the current URL.
+- `app/routes.js` — the site map. It's a list pairing each URL (like `/dashboard`) with the screen component that should be shown there. **If you're adding a new page, this is the file to update.**
+
+### Screens (`src/app/screens/`) — one file per page in the app
+- `LoginScreen.jsx` → `/` — the entry screen with a username/password form. Submitting it (with anything typed in) sends you to the dashboard. No real authentication happens.
+- `DashboardScreen.jsx` → `/dashboard` — the home hub after logging in. Shows a status card and a "latest alert" card (both hardcoded), plus a button for each of the four features below.
+- `LiveFeedScreen.jsx` → `/live-feed` — **the core feature of the whole prototype.** It displays the video stream from the `smarthal-backend` server and, roughly 5 times per second, runs a face-detection AI model over the current frame. Any face it finds gets a green box drawn around it on top of the video. It also polls the backend's `/status` endpoint to show whether the camera is online, and handles what to show if the backend is unreachable or the AI model fails to download.
+- `EventHistoryScreen.jsx` → `/event-history` — a scrollable list of past "detection events" (e.g. "Unknown individual detected", "Resident identified: John Smith"). The list itself is just an array of sample objects written at the top of the file — it's not pulling from any real camera log.
+- `EventDetailScreen.jsx` → `/event-detail/:id` — clicking an event in the history list brings you here to see more info about it (timestamp, classification, a snapshot photo). The `:id` in the URL picks which hardcoded event to display; the "snapshot" is just a placeholder stock photo.
+- `RegisterResidentScreen.jsx` → `/register-resident` — a form for adding a new known resident: a name field and buttons to "upload" or "capture" a face photo. Clicking those buttons only changes what the preview box looks like — no actual image is stored anywhere, and there's no connection yet to the face-detection feature.
+- `AlertSettingsScreen.jsx` → `/alert-settings` — lets you turn alerts on/off and choose push vs. email notifications. These are just checkboxes/toggles wired to the screen's own local state — nothing is saved to a device, account, or server, so it won't remember your choice next time you open the app.
+
+### Components (`src/app/components/`)
+- `figma/ImageWithFallback.tsx` — a small image-rendering helper that was carried over from the original Figma design export. It's used by the Event Detail screen to show the snapshot photo, and shows a fallback graphic if the image fails to load.
+
+### Styles (`src/styles/`)
+- `index.css` — the main stylesheet that gets imported once in `main.jsx`; it pulls in all the other style files below.
+- `tailwind.css` — the Tailwind CSS setup that powers most of the visual styling you see in the screens (things like `p-4`, `rounded-lg`, `border-gray-300`).
+- `theme.css` — shared color and theme variables used across the app.
+- `fonts.css` — font declarations/imports.
+
+### Backend (`smarthal-backend/`)
+A separate, small Python project — not part of the React app's build at all. See its own [README](smarthal-backend/README.md) for setup, but briefly:
+- `app.py` — the Flask server. Exposes `/video_feed` (the camera as an MJPEG stream the browser can display in an `<img>` tag) and `/status` (`{"camera_online": true|false}`).
+- `camera.py` — reads the camera's RTSP stream on a background thread so the video doesn't lag behind real time.
+- `requirements.txt` — the Python packages it needs (installed with `pip install -r requirements.txt`).
+- `.env.example` — shows the `RTSP_URL` variable you need to set; copy it to `.env` and fill in the real camera URL/credentials (that file is gitignored — never commit real camera credentials).
+
+## Good to know before you dig in
+
+- **Nothing persists.** Refreshing the browser wipes any in-progress state — toggles reset, "uploaded" photos disappear, etc. This is expected; there's no storage layer yet.
+- **Live Feed needs three things to work:** the `smarthal-backend` server running locally, that server able to reach the physical camera over the network, and an internet connection for the browser (the face-detection model itself is downloaded from a CDN the first time the screen loads, it isn't bundled with the app).
+- **Detection ≠ recognition.** Right now the app can tell "a face is present," but it can't yet tell *whose* face it is or match it against a registered resident. That would be the natural next step to build on top of the Live Feed and Register Resident screens.
