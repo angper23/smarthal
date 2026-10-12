@@ -1,0 +1,19 @@
+{
+  // Hide generated folders from the file explorer so only project code shows.
+  // They still exist on disk (npm install / pip install create them); delete
+  // this block to see them again.
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/venv": true,
+    "**/__pycache__": true,
+    "**/.pytest_cache": true,
+    "**/dist": true,
+    "**/.DS_Store": true
+  },
+  // Also skip them when searching across files (much faster, fewer false hits)
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/venv": true,
+    "**/package-lock.json": true
+  }
+}

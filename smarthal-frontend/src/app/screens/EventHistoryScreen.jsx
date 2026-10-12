@@ -43,6 +43,7 @@ const mockEvents = [
   },
 ];
 
+/** Event History screen (/event-history). Mock: lists the sample events above. */
 export function EventHistoryScreen() {
   const navigate = useNavigate();
 

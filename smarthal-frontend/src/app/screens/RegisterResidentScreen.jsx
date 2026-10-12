@@ -26,22 +26,22 @@ export function RegisterResidentScreen() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen">
 
       {/* Header with back button */}
-      <div className="bg-white border-b-2 border-gray-300 p-4 flex items-center gap-3">
-        <button onClick={() => navigate("/dashboard")} className="p-1 hover:bg-gray-100 rounded">
-          <ArrowLeft className="w-6 h-6" />
+      <div className="bg-background border-b-2 border-border p-4 flex items-center gap-3">
+        <button onClick={() => navigate("/dashboard")} className="p-1 hover:bg-window rounded cursor-pointer">
+          <ArrowLeft className="w-6 h-6 text-bgtext" />
         </button>
-        <h1 className="text-2xl">Register Resident</h1>
+        <h1 className="text-bgtext">Register Resident</h1>
       </div>
 
       <div className="p-4">
         <form onSubmit={handleSave} className="space-y-4">
 
           {/* Resident name input */}
-          <div className="bg-white border-2 border-gray-300 rounded-lg p-4">
-            <label htmlFor="residentName" className="block text-sm mb-2 text-gray-700">
+          <div className="bg-window border-2 border-border rounded-lg p-4">
+            <label htmlFor="residentName" className="block text-sm mb-2 text-bgtext">
               Resident Name
             </label>
             <input
@@ -49,17 +49,17 @@ export function RegisterResidentScreen() {
               type="text"
               value={residentName}
               onChange={(e) => setResidentName(e.target.value)}
-              className="w-full px-4 py-2 border-2 border-gray-300 rounded bg-white"
+              className="w-full px-4 py-2 border-2 border-border rounded bg-panel"
               placeholder="Enter resident name"
             />
           </div>
 
           {/* Face image upload section */}
-          <div className="bg-white border-2 border-gray-300 rounded-lg p-4">
-            <label className="block text-sm mb-3 text-gray-700">Face Image</label>
+          <div className="bg-window border-2 border-border rounded-lg p-4">
+            <label className="block text-sm mb-3 text-bgtext">Face Image</label>
 
             {/* Image preview area — shows upload icon before upload, camera icon after */}
-            <div className="mb-4 aspect-square bg-gray-200 border-2 border-dashed border-gray-400 rounded-lg flex items-center justify-center">
+            <div className="mb-4 aspect-square bg-panel border-2 border-dashed border-border rounded-lg flex items-center justify-center">
               {imageUploaded ? (
                 // Shown after the user clicks upload
                 <div className="text-center">
@@ -80,7 +80,7 @@ export function RegisterResidentScreen() {
               <button
                 type="button"
                 onClick={handleFileUpload}
-                className="w-full py-3 border-2 border-gray-300 rounded hover:bg-gray-100 flex items-center justify-center gap-2"
+                className="w-full py-3 border-2 border-border rounded hover:bg-border bg-panel flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Upload className="w-5 h-5" />
                 Upload from Gallery
@@ -89,7 +89,7 @@ export function RegisterResidentScreen() {
               <button
                 type="button"
                 onClick={handleFileUpload}
-                className="w-full py-3 border-2 border-gray-300 rounded hover:bg-gray-100 flex items-center justify-center gap-2"
+                className="w-full py-3 border-2 border-border rounded hover:bg-border bg-panel flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Camera className="w-5 h-5" />
                 Capture Photo
@@ -100,7 +100,7 @@ export function RegisterResidentScreen() {
           {/* Submit button — triggers handleSave */}
           <button
             type="submit"
-            className="w-full py-3 bg-gray-800 text-white rounded border-2 border-gray-800 hover:bg-gray-700"
+            className="w-full py-3 bg-panel text-wintext rounded border-2 border-border hover:bg-border cursor-pointer"
           >
             Save Resident
           </button>

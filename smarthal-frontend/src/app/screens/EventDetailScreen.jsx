@@ -29,6 +29,7 @@ const mockEventDetails = {
   },
 };
 
+/** Event Detail screen (/event-detail/:id). Mock: shows one sample event, picked by the id in the URL. */
 export function EventDetailScreen() {
   const navigate = useNavigate();
 

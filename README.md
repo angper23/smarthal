@@ -1,130 +1,248 @@
 # SmartHal
 
-A home security monitoring prototype. The idea: a camera watches your front door, detects when someone's there, and logs/alerts on it. Residents can be registered so the system can (eventually) tell them apart from strangers.
+A home security monitoring prototype (CPSC 355 capstone). A camera watches the door, and the app shows the live video with every detected face boxed in green, behind a real login.
 
-**Status:** this is mostly a front-end prototype — there's no database, and most screens display fake, hardcoded data so the app *looks* finished for demo purposes. The Live Feed screen is the exception: it's backed by a small Flask server (`smarthal-backend/`) that streams a real IP camera into the browser, where `face-api.js` runs live face **detection** (noticing a face is there) — there's no face **recognition** yet (knowing *whose* face it is).
+**Contents**
+1. [Install on Mac](#1-install-on-mac)
+2. [Install on Windows](#2-install-on-windows)
+3. [Start the app (every time)](#3-start-the-app-every-time)
+4. [Using the app](#4-using-the-app)
+5. [Troubleshooting](#5-troubleshooting)
+6. [For developers](#6-for-developers)
 
-## Run it
+**How it fits together:** SmartHal is two programs that run at the same time, each in its own terminal window:
 
-### First-time setup
+| Program | Folder | What it does | Address |
+|---|---|---|---|
+| **Backend** | `smarthal-backend/` | Logins, the database, the camera stream | `http://localhost:5001` |
+| **Frontend** | `smarthal-frontend/` | The website you use | `http://localhost:5173` |
 
-**Step 1 — Install Node.js.** If you don't already have it, download it from [nodejs.org](https://nodejs.org) (pick the LTS version). This also installs `npm`, the tool used below.
+You set both up once (sections 1 or 2), then start both whenever you want to use the app (section 3).
 
-**Step 2 — Download the code:**
+---
+
+## 1. Install on Mac
+
+**Step 1: Install the tools** (skip any you already have):
+- **Node.js:** download the **LTS** version from [nodejs.org](https://nodejs.org) and run the installer.
+- **Python 3.9 or newer:** most Macs already have it. Check by opening **Terminal** and typing `python3 --version`. If it's missing, install it from [python.org](https://www.python.org/downloads/).
+- **Git:** type `git --version` in Terminal. If it asks to install developer tools, click **Install**.
+
+**Step 2: Download the code.** In Terminal:
 ```bash
 git clone https://github.com/angper23/smarthal.git
 cd smarthal
 ```
 
-**Step 3 — Install the project's dependencies** (the libraries the app is built on, like React):
-```bash
-npm install
-```
-This only needs to be done once. Run it again later only if `package.json` changes.
-
-**Step 4 — Start the app:**
-```bash
-npm run dev
-```
-This starts a local server and prints a URL — usually `http://localhost:5173`. Open that link in your browser to see the app.
-
-To stop the server, click into the terminal and press `Ctrl+C`.
-
-The app itself will load fine at this point — you can navigate every screen. But the Live Feed screen's video will fail to load unless the backend below is also running.
-
-### Already have it cloned?
-
-Just grab the latest changes and start it up again:
-```bash
-git pull
-npm install
-npm run dev
-```
-
-### Backend (needed for the Live Feed screen)
-
-The Live Feed screen shows a real IP camera, not your laptop's webcam — it gets that video from a small Flask server. Setup and run instructions are in [`smarthal-backend/README.md`](smarthal-backend/README.md). You'll need the camera's RTSP URL (ask a teammate) to configure it. Without this running, every other screen still works — Live Feed will just show a "can't reach camera stream" message.
-
-### Running everything manually, step by step
-
-There's no single command that starts both pieces — you run two servers side by side in two separate terminal windows/tabs, and leave both open while you work.
-
-**Terminal 1 — the frontend** (from the project root, `smarthal/`):
-```bash
-npm install    # first time only, or after package.json changes
-npm run dev
-```
-Leave this running. It's serving the app at `http://localhost:5173`.
-
-**Terminal 2 — the backend** (do this the *first time only*, then just the "Run it" step after that):
+**Step 3: Set up the backend.** Still in Terminal, from the `smarthal` folder:
 ```bash
 cd smarthal-backend
-python3 -m venv venv && source venv/bin/activate   # first time only
-pip install -r requirements.txt                     # first time only
-cp .env.example .env                                 # first time only — then edit .env with the real RTSP_URL
-python app.py
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+python seed_user.py
 ```
-Leave this running too. It's serving the camera stream at `http://localhost:5001`.
+- After `source venv/bin/activate`, your prompt starts with `(venv)`. That's normal: it means the project's Python packages are active.
+- `seed_user.py` creates **your login** (there's no sign-up page). Pick a username and a password of at least 8 characters. **Nothing appears while you type the password; that's normal.** Type it again to confirm, then type `admin` for the role.
+- `.env` holds the camera's address and password. Leave it as it is unless you have the real camera details (ask Angel). Without them, everything works except the live video.
 
-**Then:** open `http://localhost:5173` in your browser. Every screen works with just Terminal 1 running; Live Feed additionally needs Terminal 2. To stop either one, click into its terminal and press `Ctrl+C`. Next time, skip the "first time only" lines in Terminal 2 — just `cd smarthal-backend && source venv/bin/activate && python app.py`.
+**Step 4: Set up the frontend.** Open a **second** Terminal window (Cmd + N), go to the `smarthal` folder, and run:
+```bash
+cd smarthal-frontend
+npm install
+cp .env.example .env.development
+```
 
-## How the app is put together
+✅ Setup is done. Go to [section 3](#3-start-the-app-every-time) to start the app.
 
-It's a normal React app: each "screen" (page) is its own component file, and `routes.js` maps a URL to the screen that should render there. Clicking a button in the app just calls `navigate("/some-path")`, which swaps out the screen — there's no page reload, it all happens in the browser.
+---
 
-The flow a user follows: **Login → Dashboard → (Live Feed / Event History / Register Resident / Alert Settings)**. Every screen other than the dashboard has a back button that returns you the way you came.
+## 2. Install on Windows
 
-## What's real vs. what's mocked
+> **Which terminal?** Use **Command Prompt** (search "cmd" in the Start menu) or **PowerShell**. VS Code's built-in terminal is PowerShell, which also works. **Don't use Git Bash:** the password prompt doesn't work there.
 
-- **Real:** the Live Feed screen streams video from a physical IP camera (via the `smarthal-backend` Flask server) and runs an AI model (`face-api.js`) in the browser to detect faces in that stream, drawing a box around each one it finds, live. It also shows whether the camera itself is currently reachable.
-- **Mocked — looks functional but isn't wired to anything real:**
-  - **Login** — typing anything and hitting submit logs you in. There's no password check, no account system.
-  - **Event History / Event Detail** — the list of past "detections" is a fixed array written directly in the code, not data from a camera or database.
-  - **Register Resident** — the form lets you type a name and "upload" a photo, but nothing is stored; hitting Save just pops an alert box and returns to the dashboard.
-  - **Alert Settings** — the toggles work visually (they flip on/off), but the value only lives in that screen's memory. Refresh the page and it's back to default.
+**Step 1: Install the tools** (skip any you already have):
+- **Node.js:** download the **LTS** version from [nodejs.org](https://nodejs.org) and run the installer.
+- **Python 3.9 or newer:** download it from [python.org](https://www.python.org/downloads/). ⚠️ On the installer's **first screen, tick "Add python.exe to PATH"** before clicking Install.
+- **Git:** download it from [git-scm.com](https://git-scm.com) and install with the default options.
 
-## File-by-file guide
+After installing, **close and reopen** your terminal so it picks up the new tools.
 
-### Root config files
-These aren't app code — they configure the tools that build and run the app.
-- `index.html` — the one HTML page the whole app lives inside. React finds the empty `<div id="root">` in here and injects the entire UI into it.
-- `package.json` — lists every dependency the project needs (React, Tailwind, face-api.js, etc.) and defines the shortcut commands (`npm run dev`, `npm run build`).
-- `package-lock.json` — records the *exact* version of every dependency that was installed, so everyone on the team gets identical packages when they run `npm install`.
-- `vite.config.ts` — settings for Vite, the tool that runs the dev server and bundles the app for production.
-- `postcss.config.mjs` — plugs Tailwind CSS into the build process so the utility classes used throughout the screens (like `bg-gray-50`) actually generate real CSS.
+**Step 2: Download the code.**
+```bat
+git clone https://github.com/angper23/smarthal.git
+cd smarthal
+```
 
-### App setup (`src/`)
-- `main.jsx` — the very first file that runs. It grabs the `<div id="root">` from `index.html` and tells React to render the app into it.
-- `app/App.tsx` — the top-level component. All it does is hand control over to the router so the correct screen shows up for the current URL.
-- `app/routes.js` — the site map. It's a list pairing each URL (like `/dashboard`) with the screen component that should be shown there. **If you're adding a new page, this is the file to update.**
+**Step 3: Set up the backend.** From the `smarthal` folder:
+```bat
+cd smarthal-backend
+py -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+copy .env.example .env
+python seed_user.py
+```
+- If `py` isn't recognized, use `python -m venv venv` instead.
+- **PowerShell only:** if activating says *"running scripts is disabled on this system"*, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, answer `Y`, then run `venv\Scripts\activate` again.
+- After activating, your prompt starts with `(venv)`. That's normal.
+- `seed_user.py` creates **your login** (there's no sign-up page). Pick a username and a password of at least 8 characters. **Nothing appears while you type the password; that's normal.** Type it again to confirm, then type `admin` for the role.
+- `.env` holds the camera's address and password. Leave it as it is unless you have the real camera details (ask Angel). Without them, everything works except the live video.
 
-### Screens (`src/app/screens/`) — one file per page in the app
-- `LoginScreen.jsx` → `/` — the entry screen with a username/password form. Submitting it (with anything typed in) sends you to the dashboard. No real authentication happens.
-- `DashboardScreen.jsx` → `/dashboard` — the home hub after logging in. Shows a status card and a "latest alert" card (both hardcoded), plus a button for each of the four features below.
-- `LiveFeedScreen.jsx` → `/live-feed` — **the core feature of the whole prototype.** It displays the video stream from the `smarthal-backend` server and, roughly 5 times per second, runs a face-detection AI model over the current frame. Any face it finds gets a green box drawn around it on top of the video. It also polls the backend's `/status` endpoint to show whether the camera is online, and handles what to show if the backend is unreachable or the AI model fails to download.
-- `EventHistoryScreen.jsx` → `/event-history` — a scrollable list of past "detection events" (e.g. "Unknown individual detected", "Resident identified: John Smith"). The list itself is just an array of sample objects written at the top of the file — it's not pulling from any real camera log.
-- `EventDetailScreen.jsx` → `/event-detail/:id` — clicking an event in the history list brings you here to see more info about it (timestamp, classification, a snapshot photo). The `:id` in the URL picks which hardcoded event to display; the "snapshot" is just a placeholder stock photo.
-- `RegisterResidentScreen.jsx` → `/register-resident` — a form for adding a new known resident: a name field and buttons to "upload" or "capture" a face photo. Clicking those buttons only changes what the preview box looks like — no actual image is stored anywhere, and there's no connection yet to the face-detection feature.
-- `AlertSettingsScreen.jsx` → `/alert-settings` — lets you turn alerts on/off and choose push vs. email notifications. These are just checkboxes/toggles wired to the screen's own local state — nothing is saved to a device, account, or server, so it won't remember your choice next time you open the app.
+**Step 4: Set up the frontend.** Open a **second** terminal window, go to the `smarthal` folder, and run:
+```bat
+cd smarthal-frontend
+npm install
+copy .env.example .env.development
+```
 
-### Components (`src/app/components/`)
-- `figma/ImageWithFallback.tsx` — a small image-rendering helper that was carried over from the original Figma design export. It's used by the Event Detail screen to show the snapshot photo, and shows a fallback graphic if the image fails to load.
+✅ Setup is done. Go to [section 3](#3-start-the-app-every-time) to start the app.
 
-### Styles (`src/styles/`)
-- `index.css` — the main stylesheet that gets imported once in `main.jsx`; it pulls in all the other style files below.
-- `tailwind.css` — the Tailwind CSS setup that powers most of the visual styling you see in the screens (things like `p-4`, `rounded-lg`, `border-gray-300`).
-- `theme.css` — shared color and theme variables used across the app.
-- `fonts.css` — font declarations/imports.
+---
 
-### Backend (`smarthal-backend/`)
-A separate, small Python project — not part of the React app's build at all. See its own [README](smarthal-backend/README.md) for setup, but briefly:
-- `app.py` — the Flask server. Exposes `/video_feed` (the camera as an MJPEG stream the browser can display in an `<img>` tag) and `/status` (`{"camera_online": true|false}`).
-- `camera.py` — reads the camera's RTSP stream on a background thread so the video doesn't lag behind real time.
-- `requirements.txt` — the Python packages it needs (installed with `pip install -r requirements.txt`).
-- `.env.example` — shows the `RTSP_URL` variable you need to set; copy it to `.env` and fill in the real camera URL/credentials (that file is gitignored — never commit real camera credentials).
+## 3. Start the app (every time)
 
-## Good to know before you dig in
+You need **two terminal windows open at the same time**. Start in the `smarthal` folder in each.
 
-- **Nothing persists.** Refreshing the browser wipes any in-progress state — toggles reset, "uploaded" photos disappear, etc. This is expected; there's no storage layer yet.
-- **Live Feed needs three things to work:** the `smarthal-backend` server running locally, that server able to reach the physical camera over the network, and an internet connection for the browser (the face-detection model itself is downloaded from a CDN the first time the screen loads, it isn't bundled with the app).
-- **Detection ≠ recognition.** Right now the app can tell "a face is present," but it can't yet tell *whose* face it is or match it against a registered resident. That would be the natural next step to build on top of the Live Feed and Register Resident screens.
+**Window 1: the backend**
+
+| Mac | Windows |
+|---|---|
+| `cd smarthal-backend` | `cd smarthal-backend` |
+| `source venv/bin/activate` | `venv\Scripts\activate` |
+| `python app.py` | `python app.py` |
+
+Wait for `Running on http://127.0.0.1:5001`.
+
+**Window 2: the frontend**
+
+| Mac and Windows |
+|---|
+| `cd smarthal-frontend` |
+| `npm run dev` |
+
+Wait for `http://localhost:5173`.
+
+**Then open http://localhost:5173 in your browser** and log in with the account you made in setup.
+
+**To stop:** click into each window and press **Ctrl + C**. (On Mac, don't press Ctrl + Z; that pauses the program instead of stopping it.)
+
+**After downloading new changes** with `git pull`: run `pip install -r requirements.txt` in `smarthal-backend` (with `(venv)` active) and `npm install` in `smarthal-frontend`, in case new packages were added. Then start the app as usual.
+
+---
+
+## 4. Using the app
+
+**Logging in:** use the username and password you created with `seed_user.py`. Wrong details show "Invalid username or password". After 5 wrong tries within 15 minutes, that username is blocked for a while (at most 15 minutes).
+
+**The screens:**
+
+| Screen | What it does | Real or mock? |
+|---|---|---|
+| **Login** | Checks your username and password | ✅ Real |
+| **Dashboard** | The home page, with buttons for every feature, **Change Password** and **Logout** | ✅ Real buttons; the status and alert cards show sample data |
+| **Live Feed** | The live camera video, with a green box around every face it detects | ✅ Real (needs the camera; see below) |
+| **Change Password** | Asks for your current password, then a new one (8+ characters). Signs out any other device logged in to your account | ✅ Real |
+| **Event History / Event Detail** | A list of past detections | 🟡 Sample data |
+| **Register Resident** | Form to add a known person | 🟡 Mock; nothing is saved |
+| **Alert Settings** | Notification switches | 🟡 Mock; resets on refresh |
+
+**Good to know:**
+- **Staying logged in:** your login lasts until you log out, close the tab, or are inactive for 30 minutes. Restarting the backend also logs everyone out.
+- **More accounts:** run `python seed_user.py` again in `smarthal-backend` (with `(venv)` active).
+- **Forgot a password?** Run `python reset_password.py` in `smarthal-backend` (with `(venv)` active). It asks for the username and a new password.
+- **The live camera only works on the laptop it's plugged into** (Angel's), through Mac Internet Sharing. On any other computer, Live Feed says "Camera unreachable", which is expected.
+- **Face detection ≠ recognition:** the app sees *that* a face is there, not *whose* face it is. Recognition is planned for a later sprint.
+
+---
+
+## 5. Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| **Windows:** `'cp' is not recognized…` or `'source' is not recognized…` | Those are Mac commands. Use the Windows ones: `copy` instead of `cp`, `venv\Scripts\activate` instead of `source venv/bin/activate`. |
+| **Windows:** `'py' is not recognized…` | Use `python -m venv venv` instead. If `python` opens the Microsoft Store or isn't found either, reinstall Python from python.org with **"Add python.exe to PATH"** ticked, then reopen the terminal. |
+| **Windows PowerShell:** *"running scripts is disabled on this system"* | Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, answer `Y`, then activate again. Or use Command Prompt instead. |
+| **Mac:** `python3: command not found` | Install Python from python.org, then open a new Terminal window. |
+| `No module named flask` (or `dotenv`, `cv2`, `bcrypt`) | The `venv` isn't active. Activate it (your prompt should start with `(venv)`), then run `python app.py` again. |
+| `npm: command not found` / `'npm' is not recognized` | Install Node.js (LTS) from nodejs.org, then reopen the terminal. |
+| Login page says **"Can't reach the server"** | The backend window isn't running, or it stopped with an error. Check Window 1. |
+| **"Invalid username or password"** with the right details | Usernames are case-sensitive. If you forgot the password, run `python reset_password.py` in `smarthal-backend`. |
+| **"Too many attempts"** | 5 wrong passwords within 15 minutes. Wait (at most 15 minutes), or restart the backend to clear it. |
+| **"Address already in use"** / **"Port 5001 is in use"** | The backend is already running in another window. Use that one, or stop it with Ctrl + C first. |
+| **Live Feed says "Camera unreachable"** | Expected unless you're on the laptop the camera is plugged into. On that laptop: plug in the camera's Ethernet adapter and turn on **System Settings → General → Sharing → Internet Sharing**. It reconnects within a few seconds. |
+| Live Feed shows video but **never detects a face** | See "Things not to break" in section 6 (`crossOrigin="anonymous"`). |
+
+---
+
+## 6. For developers
+
+### Project layout
+```
+smarthal/
+├── README.md                 ← this file
+├── smarthal-frontend/        ← React + Vite app
+│   ├── src/app/              ← screens, routes, login state, API helper
+│   ├── src/styles/           ← Tailwind setup and theme colors
+│   ├── package.json
+│   └── .env.example          ← copy to .env.development
+└── smarthal-backend/         ← Flask server
+    ├── app.py                ← the server and every endpoint
+    ├── auth.py               ← password hashing, sessions, rate limiting
+    ├── camera.py             ← reads the camera's RTSP stream on a background thread
+    ├── db.py, schema.sql     ← SQLite database and its tables
+    ├── seed_user.py          ← create an account
+    ├── reset_password.py     ← reset a forgotten password
+    ├── tests/                ← pytest tests
+    └── .env.example          ← copy to .env
+```
+Every file starts with a short summary, and every function has a one-to-three-line explanation. Good places to start: `smarthal-frontend/src/app/routes.js` and `smarthal-backend/app.py`.
+
+### How it works
+```
+Reolink camera → (RTSP) → Flask backend → (MJPEG over HTTP) → browser <img> → face-api.js draws boxes
+```
+- **Video:** browsers can't play RTSP, so the backend reads the camera stream (`camera.py`) and re-serves it as MJPEG ("one JPEG after another"), which a plain `<img>` can show. It's capped at 10 frames per second.
+- **Face detection** runs in the browser (`face-api.js` in `LiveFeedScreen.jsx`), reading frames off that `<img>` about 5 times a second. The model downloads from a CDN, so the browser needs internet.
+- **Login:** passwords are bcrypt-hashed in SQLite (`users` table). A login returns a random token, kept in the browser's `sessionStorage` and sent as `Authorization: Bearer <token>`. Sessions live in the backend's memory and expire after 30 minutes without activity. Every screen except `/login` is behind a route guard (`RequireAuth` in `AuthContext.jsx`).
+- **The video needs a login too:** an `<img>` can't send headers, so Live Feed first gets a short-lived **stream token** (60 seconds) and puts it in the video URL. An open stream re-checks the session every 5 seconds and stops when you log out.
+- **Camera disconnects:** `is_online()` checks how long ago the last frame arrived (5 s), because a dead RTSP connection can make `read()` hang. The open/read timeouts are passed to `cv2.VideoCapture(...)` when it's created; setting them afterward is silently ignored.
+
+### Backend endpoints
+Authenticated endpoints need `Authorization: Bearer <token>`. A missing or expired token gets `401 {"error": "Authentication required"}`.
+
+| Endpoint | Auth | What it does |
+|---|---|---|
+| `POST /login` | none | Body `{"username", "password"}`. `200 {"token", "expires_in": 1800, "user": {"id", "username", "role"}}`. Wrong password or unknown user: `401 {"error": "Invalid username or password"}` (same message and timing either way). 5 failures per username + IP in 15 min: `429` with `Retry-After`. |
+| `POST /logout` | bearer | Ends the session (`204`); its open video stream stops within ~5 s. |
+| `GET /me` | bearer | `{"user": {"id", "username", "role"}}` |
+| `POST /change-password` | bearer | Body `{"current_password", "new_password"}`. `204`, and every **other** session of the account is signed out. `403` wrong current password (5 tries per 15 min, then `429`); `400` if the new one is under 8 characters, over 72 bytes, or unchanged. |
+| `POST /stream-token` | bearer | `{"stream_token", "expires_in": 60}` for opening `/video_feed`. |
+| `GET /video_feed?stream_token=…` | stream token | The MJPEG camera stream. Fetch a new token for each reconnect. |
+| `GET /status` | bearer | `{"camera_online": true\|false}` |
+
+### Configuration
+**Backend, `smarthal-backend/.env`** (gitignored; never commit it):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `RTSP_URL` | (required) | The camera's full RTSP URL, password included. Kept only here, never in the database. |
+| `DB_PATH` | `data/dev.db` | SQLite file, relative to `smarthal-backend/`. `*.db` and `data/` are gitignored. |
+| `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated frontend origins allowed to call the API. `*` is refused on purpose. |
+
+**Frontend, `smarthal-frontend/.env.development`** (gitignored): `VITE_BACKEND_URL` (default `http://localhost:5001`).
+
+### Tests
+With `(venv)` active, in `smarthal-backend`:
+```
+pip install -r requirements-dev.txt
+python -m pytest tests
+```
+They use a fake camera and a temporary database, so they need neither the camera nor your real data.
+
+### Things not to break
+- **Keep `crossOrigin="anonymous"` on the Live Feed `<img>`.** Without it, the browser silently blocks face-api.js from reading the video (the backend is a different origin), and detection just never fires.
+- **Port 5001, not Flask's default 5000:** on Mac, AirPlay Receiver uses port 5000.
+- **The backend binds to `127.0.0.1` only** and CORS allows only the frontend's origin. Don't change these to `0.0.0.0` or `*`.
+- **Never commit** `.env`, `.env.development`, `*.db`, `data/` or any password. The repo is public.

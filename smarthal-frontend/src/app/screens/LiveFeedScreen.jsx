@@ -6,13 +6,10 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router";
 import * as faceapi from "face-api.js";
 import { ArrowLeft, Circle, AlertTriangle, RefreshCw } from "lucide-react";
+import { apiFetch, BACKEND_URL, NetworkError } from "../api.js";
 
 // URL where the face detection AI model weights are downloaded from
 const MODEL_URL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model";
-
-// Flask backend that streams the camera and reports its online status
-const BACKEND_URL = "http://localhost:5001";
-const VIDEO_FEED_URL = `${BACKEND_URL}/video_feed`;
 
 // How often to scan for faces — 200ms means 5 times per second
 const DETECTION_INTERVAL_MS = 200;
@@ -20,6 +17,7 @@ const DETECTION_INTERVAL_MS = 200;
 // How often to check whether the backend can still reach the camera
 const STATUS_POLL_INTERVAL_MS = 8000;
 
+/** Live Feed screen (/live-feed): the camera stream with in-browser face detection. */
 export function LiveFeedScreen() {
   const navigate = useNavigate();
 
@@ -39,8 +37,22 @@ export function LiveFeedScreen() {
   const [modelError, setModelError] = useState(false);
 
   // Whether the <img> failed to load the backend's video stream at all
-  // (e.g. the Flask backend isn't running)
-  const [streamError, setStreamError] = useState(false);
+  // (e.g. the Flask backend isn't running). Mirrored in a ref so the status
+  // poll below can see the latest value without restarting its interval
+  const [streamError, setStreamErrorState] = useState(false);
+  const streamErrorRef = useRef(false);
+  // Update streamError in both places: state (redraws the page) and the ref (read by the status poll)
+  const setStreamError = useCallback((value) => {
+    streamErrorRef.current = value;
+    setStreamErrorState(value);
+  }, []);
+
+  // Whether the last /status poll couldn't reach the backend at all
+  const [backendUnreachable, setBackendUnreachable] = useState(false);
+
+  // URL for the <img> — the video feed plus a short-lived stream token,
+  // since an <img> can't send the Authorization header. null until fetched
+  const [streamSrc, setStreamSrc] = useState(null);
 
   // Whether the backend reports the camera itself as reachable — polled
   // from /status rather than inferred from the browser (SRS NFR §5.1)
@@ -65,20 +77,47 @@ export function LiveFeedScreen() {
     };
   }, []);
 
+  // Open (or re-open) the video stream. Stream tokens are single-use and
+  // expire after 60 seconds, so every connect fetches a fresh one
+  const connectStream = useCallback(async () => {
+    try {
+      const res = await apiFetch("/stream-token", { method: "POST" });
+      if (!res.ok) return; // a 401 has already logged us out
+      const { stream_token } = await res.json();
+      setStreamError(false);
+      setStreamSrc(`${BACKEND_URL}/video_feed?stream_token=${encodeURIComponent(stream_token)}`);
+    } catch (err) {
+      if (!(err instanceof NetworkError)) throw err;
+      setStreamError(true);
+    }
+  }, [setStreamError]);
+
+  // Open the stream when the screen first loads
+  useEffect(() => {
+    connectStream();
+  }, [connectStream]);
+
   // Poll the backend's /status endpoint to know if it can still reach the
   // camera — separate from streamError, which only tells us whether the
-  // browser's <img> request itself failed
+  // browser's <img> request itself failed. A 401 here (session expired)
+  // logs out via apiFetch
   useEffect(() => {
     let cancelled = false;
 
+    // One status check: update online/offline, and reconnect the stream if it had dropped
     const pollStatus = () => {
-      fetch(`${BACKEND_URL}/status`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (!cancelled) setCameraOnline(Boolean(data.camera_online));
+      apiFetch("/status")
+        .then(async (res) => {
+          if (cancelled || !res.ok) return;
+          const data = await res.json();
+          if (cancelled) return;
+          setBackendUnreachable(false);
+          setCameraOnline(Boolean(data.camera_online));
+          // Backend is reachable again after the stream dropped — reconnect
+          if (streamErrorRef.current) connectStream();
         })
-        .catch(() => {
-          if (!cancelled) setCameraOnline(false);
+        .catch((err) => {
+          if (!cancelled && err instanceof NetworkError) setBackendUnreachable(true);
         });
     };
 
@@ -89,7 +128,7 @@ export function LiveFeedScreen() {
       cancelled = true;
       clearInterval(statusInterval);
     };
-  }, []);
+  }, [connectStream]);
 
   // Detection loop — runs every 200ms once models are loaded
   const startDetection = useCallback(() => {
@@ -175,10 +214,12 @@ export function LiveFeedScreen() {
           <div className="flex items-center gap-2">
             <Circle
               className={`w-3 h-3 ${
-                cameraOnline ? "fill-green-600 text-green-600" : "fill-red-600 text-red-600"
+                cameraOnline && !backendUnreachable ? "fill-green-600 text-green-600" : "fill-red-600 text-red-600"
               }`}
             />
-            <span className="text-sm">{cameraOnline ? "Camera Online" : "Camera Offline"}</span>
+            <span className="text-sm">
+              {backendUnreachable ? "Server Unreachable" : cameraOnline ? "Camera Online" : "Camera Offline"}
+            </span>
           </div>
           <div className="text-sm">
             {/* Show loading state while model downloads */}
@@ -200,21 +241,29 @@ export function LiveFeedScreen() {
 
         {/* Error message shown if the browser can't reach the stream at all
             (e.g. the Flask backend isn't running) */}
-        {streamError && (
+        {(streamError || backendUnreachable) && (
           <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 shrink-0" />
-            <div>
-              <p className="font-medium text-red-800">Can't reach camera stream</p>
+            <div className="flex-1">
+              <p className="font-medium text-red-800">Can't reach the server</p>
               <p className="text-sm text-red-700 mt-1">
                 Make sure the SmartHal backend is running locally (see{" "}
-                <code>smarthal-backend/README.md</code>) and try reloading the page.
+                <code>README.md</code>, section 3). This page reconnects
+                automatically once it's back.
               </p>
             </div>
+            <button
+              onClick={connectStream}
+              className="flex items-center gap-1 text-sm text-red-700 border border-red-300 rounded px-2 py-1 hover:bg-red-100"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Retry
+            </button>
           </div>
         )}
 
         {/* Error message shown if the backend is up but the camera itself isn't */}
-        {!streamError && !cameraOnline && (
+        {!streamError && !backendUnreachable && !cameraOnline && (
           <div className="bg-orange-50 border-2 border-orange-300 rounded-lg p-4 flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-orange-600 mt-0.5 shrink-0" />
             <div>
@@ -253,15 +302,21 @@ export function LiveFeedScreen() {
                   crossOrigin is required because this <img> is on a different
                   origin (port 5173 vs. the backend's 5001) — without it, the
                   browser blocks face-api.js from reading pixel data off the
-                  image (a "tainted canvas"), so detection silently never fires */}
-              <img
-                ref={imgRef}
-                src={VIDEO_FEED_URL}
-                alt="Live camera feed"
-                className="w-full h-full object-cover"
-                crossOrigin="anonymous"
-                onError={() => setStreamError(true)}
-              />
+                  image (a "tainted canvas"), so detection silently never fires.
+                  crossOrigin must also come BEFORE src: React sets attributes
+                  in this order, and if src lands first, Safari starts a
+                  non-CORS request and restarts it once crossOrigin appears —
+                  opening the stream twice for every connect */}
+              {streamSrc && (
+                <img
+                  ref={imgRef}
+                  crossOrigin="anonymous"
+                  src={streamSrc}
+                  alt="Live camera feed"
+                  className="w-full h-full object-cover"
+                  onError={() => setStreamError(true)}
+                />
+              )}
 
               {/* Canvas sits on top of the stream — bounding boxes are drawn here */}
               <canvas

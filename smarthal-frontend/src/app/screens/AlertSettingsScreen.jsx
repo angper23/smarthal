@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { ArrowLeft } from "lucide-react";
 
+/** Alert Settings screen (/alert-settings). Mock: toggles aren't saved anywhere yet. */
 export function AlertSettingsScreen() {
   const navigate = useNavigate();
 
