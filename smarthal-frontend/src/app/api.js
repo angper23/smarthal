@@ -32,12 +32,15 @@ export class NetworkError extends Error {
 
 /**
  * Call the backend, e.g. apiFetch("/status") or apiFetch("/login", { method: "POST", body: {...} }).
- * Adds the login token, sends body as JSON, and returns the normal fetch Response.
+ * Adds the login token, sends body as JSON (or as-is if it's FormData, e.g. photo uploads),
+ * and returns the normal fetch Response.
  * Throws NetworkError if the backend can't be reached at all.
  */
 export async function apiFetch(path, { method = "GET", body, signal } = {}) {
   const headers = {};
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  // FormData sets its own multipart Content-Type (with the boundary), so leave it alone
+  const isForm = body instanceof FormData;
+  if (body !== undefined && !isForm) headers["Content-Type"] = "application/json";
   const sentToken = currentToken;
   if (sentToken) headers.Authorization = `Bearer ${sentToken}`;
 
@@ -46,7 +49,7 @@ export async function apiFetch(path, { method = "GET", body, signal } = {}) {
     res = await fetch(`${BACKEND_URL}${path}`, {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined || isForm ? body : JSON.stringify(body),
       signal,
     });
   } catch (err) {

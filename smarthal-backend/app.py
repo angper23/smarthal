@@ -1,4 +1,4 @@
-"""SmartHal Flask backend: login, sessions, and the live camera stream.
+"""SmartHal Flask backend: login, sessions, the live camera stream, resident registration and recognition.
 
 Run with `python app.py` (serves on 127.0.0.1:5001). Endpoints are listed in the project README.md (section 6).
 """
@@ -6,14 +6,21 @@ Run with `python app.py` (serves on 127.0.0.1:5001). Endpoints are listed in the
 import logging
 import os
 import re
+import shutil
+import sqlite3
+import threading
 import time
 
+import cv2
+import numpy as np
 from dotenv import load_dotenv
 from flask import Flask, Response, g, jsonify, request
 from flask_cors import CORS
 
 import auth
-from db import get_connection, init_db
+import faces
+from recognition import Recognizer
+from db import BACKEND_DIR, get_connection, init_db
 
 load_dotenv()
 
@@ -34,6 +41,13 @@ INVALID_LOGIN = {"error": "Invalid username or password"}
 
 # Same rule as seed_user.py.
 MIN_PASSWORD_LENGTH = 8
+
+# Register Resident: the webcam capture takes one photo per angle, in this order.
+RESIDENT_ANGLES = ("front", "left", "right", "up", "down")
+MAX_RESIDENT_NAME = 100
+MAX_PHOTO_BYTES = 5 * 1024 * 1024
+# Whole request: five photos plus the form fields. Bigger requests get 413.
+MAX_REQUEST_BYTES = len(RESIDENT_ANGLES) * MAX_PHOTO_BYTES + 1024 * 1024
 
 
 class _RedactTokensFilter(logging.Filter):
@@ -67,20 +81,40 @@ def cors_origins():
     return origins
 
 
-def create_app(camera, sessions=None, login_limiter=None, password_limiter=None):
+def resident_photos_dir():
+    """Folder for registered residents' photos (RESIDENT_PHOTOS_DIR, default data/residents/).
+
+    Under data/, which is gitignored: these are photos of real people's faces.
+    """
+    path = os.environ.get("RESIDENT_PHOTOS_DIR", "data/residents")
+    return path if os.path.isabs(path) else os.path.join(BACKEND_DIR, path)
+
+
+def create_app(camera, sessions=None, login_limiter=None, password_limiter=None, face_engine=None,
+               recognizer=None):
     """Build and return the Flask app.
 
     camera: anything with is_online() and get_jpeg_frame() (the real Camera, or a fake in tests).
     sessions, login_limiter, password_limiter: optional, so tests can pass in versions with a fake clock.
+    face_engine: anything with embed_faces(img), detect_faces(img), model, consistency_threshold
+        and match_threshold (default: faces.LazyEngine, which loads the real models on first use;
+        tests pass a fake).
+    recognizer: Live Feed recognition (default: a background recognition.Recognizer on this
+        camera and engine; tests pass one with background=False).
     """
     sessions = sessions or auth.SessionStore()
     login_limiter = login_limiter or auth.LoginRateLimiter()
     # Wrong "current password" attempts on /change-password, limited like
     # logins so a hijacked session can't be used to guess the password.
     password_limiter = password_limiter or auth.LoginRateLimiter()
+    face_engine = face_engine or faces.LazyEngine()
+    recognizer = recognizer or Recognizer(camera, face_engine)
 
     app = Flask(__name__)
+    app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
     app.extensions["sessions"] = sessions
+    app.extensions["face_engine"] = face_engine
+    app.extensions["recognizer"] = recognizer
     # Only the frontend's own origin(s) may read responses — the stream and
     # API are behind auth now, but there's still no reason to let other
     # sites try. Retry-After is exposed so the login screen could read it.
@@ -268,6 +302,167 @@ def create_app(camera, sessions=None, login_limiter=None, password_limiter=None)
         """GET /status: report whether the backend is currently receiving camera frames."""
         return jsonify({"camera_online": camera.is_online()})
 
+    @app.route("/recognitions")
+    @auth.require_auth
+    def recognitions():
+        """GET /recognitions: who's in front of the camera right now.
+
+        Returns {faces: [{box, resident_id, name, score}], age_seconds, threshold, error}.
+        box is [x, y, width, height] as fractions of the frame; name is null for an Unknown
+        face. Live Feed polls this a few times a second; recognition pauses when nobody does.
+        """
+        result = recognizer.latest()
+        result["camera_online"] = camera.is_online()
+        return jsonify(result)
+
+    @app.errorhandler(413)
+    def too_large(_err):
+        """Return JSON (not Flask's HTML page) when an upload is over MAX_REQUEST_BYTES."""
+        return jsonify({"error": "Photos are too large. Each must be under 5 MB."}), 413
+
+    def photo_error(angle, reason, message):
+        """400 response pointing at one capture angle, so the screen can ask for a retake of just that one."""
+        return jsonify({"error": message, "angle": angle, "reason": reason}), 400
+
+    @app.route("/residents", methods=["POST"])
+    @auth.require_auth
+    def register_resident():
+        """POST /residents (multipart): register a resident from one webcam photo per angle.
+
+        Form fields: name, plus one image file per angle in RESIDENT_ANGLES.
+        Each photo must contain exactly one face, and every angle must look like the
+        same person as the front photo. Returns 201 {resident: {id, name, angles}};
+        a bad photo gives 400 {error, angle, reason} (reason: invalid_image, no_face,
+        multiple_faces or different_person).
+        """
+        name = (request.form.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "Resident name is required"}), 400
+        if len(name) > MAX_RESIDENT_NAME:
+            return jsonify({"error": f"Resident name must be at most {MAX_RESIDENT_NAME} characters"}), 400
+
+        images = {}
+        for angle in RESIDENT_ANGLES:
+            upload = request.files.get(angle)
+            if upload is None:
+                return photo_error(angle, "missing", f"The {angle} photo is missing.")
+            data = upload.read(MAX_PHOTO_BYTES + 1)
+            if len(data) > MAX_PHOTO_BYTES:
+                return photo_error(angle, "too_large", f"The {angle} photo is over 5 MB.")
+            # Decoding is the real type check; the browser-supplied filename
+            # and content type can say anything.
+            img = faces.decode_image(data)
+            if img is None:
+                return photo_error(angle, "invalid_image", f"The {angle} photo isn't a readable image.")
+            images[angle] = img
+
+        embeddings = {}
+        for angle in RESIDENT_ANGLES:
+            found = face_engine.embed_faces(images[angle])
+            if not found:
+                return photo_error(angle, "no_face",
+                                   f"No face found in the {angle} photo. Retake it in good light, close to the camera.")
+            if len(found) > 1:
+                return photo_error(angle, "multiple_faces",
+                                   f"More than one face in the {angle} photo. Only the resident should be in frame.")
+            embeddings[angle] = np.asarray(found[0], dtype=np.float32)
+
+        # Catches someone else stepping in partway through the capture.
+        for angle in RESIDENT_ANGLES[1:]:
+            if faces.cosine(embeddings["front"], embeddings[angle]) < face_engine.consistency_threshold:
+                return photo_error(angle, "different_person",
+                                   f"The {angle} photo doesn't look like the same person as the front photo. Retake it.")
+
+        conn = get_connection()
+        folder = None
+        try:
+            resident_id = conn.execute(
+                "INSERT INTO residents (registered_by, name) VALUES (?, ?)",
+                (g.user["id"], name),
+            ).lastrowid
+            folder = os.path.join(resident_photos_dir(), str(resident_id))
+            os.makedirs(folder, mode=0o700, exist_ok=True)
+            for angle in RESIDENT_ANGLES:
+                rel_path = f"{resident_id}/{angle}.jpg"
+                # Saved from the decoded pixels, not the uploaded bytes: drops
+                # any metadata (e.g. location) and anything that isn't an image.
+                if not cv2.imwrite(os.path.join(folder, f"{angle}.jpg"), images[angle],
+                                   [cv2.IMWRITE_JPEG_QUALITY, 90]):
+                    raise OSError(f"could not save the {angle} photo")
+                conn.execute(
+                    "INSERT INTO resident_face_angles (resident_id, angle, embedding, model, photo_path)"
+                    " VALUES (?, ?, ?, ?, ?)",
+                    (resident_id, angle, embeddings[angle].tobytes(), face_engine.model, rel_path),
+                )
+            conn.execute("UPDATE residents SET photo_path = ? WHERE id = ?",
+                         (f"{resident_id}/front.jpg", resident_id))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            if folder:
+                shutil.rmtree(folder, ignore_errors=True)
+            raise
+        finally:
+            conn.close()
+
+        recognizer.invalidate()  # Live Feed should recognize them right away
+        return jsonify({"resident": {"id": resident_id, "name": name, "angles": list(RESIDENT_ANGLES)}}), 201
+
+    @app.route("/residents", methods=["GET"])
+    @auth.require_auth
+    def list_residents():
+        """GET /residents: every registered resident, newest first, with who registered them."""
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT r.id, r.name, r.registered_by, u.username AS registered_by_name,"
+                " (SELECT COUNT(*) FROM resident_face_angles a WHERE a.resident_id = r.id) AS angles"
+                " FROM residents r JOIN users u ON u.id = r.registered_by ORDER BY r.id DESC"
+            ).fetchall()
+        finally:
+            conn.close()
+        user = g.user
+        return jsonify({"residents": [
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "registered_by": r["registered_by_name"],
+                "angles": r["angles"],
+                "can_delete": user["role"] == "admin" or r["registered_by"] == user["id"],
+            }
+            for r in rows
+        ]})
+
+    @app.route("/residents/<int:resident_id>", methods=["DELETE"])
+    @auth.require_auth
+    def delete_resident(resident_id):
+        """DELETE /residents/<id>: remove a resident, their face embeddings and their photos.
+
+        Allowed for the user who registered them, or an admin. 204 on success, 404 if there's
+        no such resident, 403 if not allowed, 409 if detection events still point at them.
+        """
+        conn = get_connection()
+        try:
+            row = conn.execute("SELECT registered_by FROM residents WHERE id = ?", (resident_id,)).fetchone()
+            if row is None:
+                return jsonify({"error": "Resident not found"}), 404
+            if g.user["role"] != "admin" and row["registered_by"] != g.user["id"]:
+                return jsonify({"error": "Only the person who registered this resident, or an admin, can delete them"}), 403
+            try:
+                # resident_face_angles rows go with it (ON DELETE CASCADE)
+                conn.execute("DELETE FROM residents WHERE id = ?", (resident_id,))
+                conn.commit()
+            except sqlite3.IntegrityError:
+                # Detection events (a later sprint) reference residents; don't silently rewrite history
+                return jsonify({"error": "This resident appears in recorded events and can't be deleted yet"}), 409
+        finally:
+            conn.close()
+
+        # Photos last: if the database delete failed above, nothing was removed
+        shutil.rmtree(os.path.join(resident_photos_dir(), str(resident_id)), ignore_errors=True)
+        recognizer.invalidate()
+        return "", 204
+
     return app
 
 
@@ -281,7 +476,17 @@ if __name__ == "__main__":
             "camera's RTSP URL."
         )
 
-    app = create_app(Camera(rtsp_url))
+    face_engine = faces.LazyEngine()
+
+    def warm_up_faces():
+        """Load the face models in the background so the first registration isn't slow."""
+        try:
+            face_engine.warm_up()
+        except Exception:
+            logging.exception("Couldn't load the face models; Register Resident will retry on first use")
+
+    threading.Thread(target=warm_up_faces, daemon=True).start()
+    app = create_app(Camera(rtsp_url), face_engine=face_engine)
     # 127.0.0.1, not 0.0.0.0: even with login in place, there's no reason
     # for anyone else on the same WiFi/LAN to reach this server directly.
     # The frontend runs on this same machine, and remote access will go

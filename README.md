@@ -1,6 +1,6 @@
 # SmartHal
 
-A home security monitoring prototype (CPSC 355 capstone). A camera watches the door, and the app shows the live video with every detected face boxed in green, behind a real login.
+A home security monitoring prototype (CPSC 355 capstone). A camera watches the door, and the app shows the live video behind a real login, with every face labeled: a registered resident's name in green, or "Unknown" in orange. Residents are registered with the webcam (five face angles each).
 
 **Contents**
 1. [Install on Mac](#1-install-on-mac)
@@ -40,10 +40,13 @@ cd smarthal-backend
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+python faces.py
 cp .env.example .env
 python seed_user.py
 ```
 - After `source venv/bin/activate`, your prompt starts with `(venv)`. That's normal: it means the project's Python packages are active.
+- `pip install` takes **a few minutes** the first time: the face library for Register Resident is large.
+- `python faces.py` downloads the **face models** (about 280 MB) into `smarthal-backend/models/` and checks they load. It should end with `models ready`. Run it once; it's skipped automatically next time.
 - `seed_user.py` creates **your login** (there's no sign-up page). Pick a username and a password of at least 8 characters. **Nothing appears while you type the password; that's normal.** Type it again to confirm, then type `admin` for the role.
 - `.env` holds the camera's address and password. Leave it as it is unless you have the real camera details (ask Angel). Without them, everything works except the live video.
 
@@ -81,12 +84,15 @@ cd smarthal-backend
 py -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
+python faces.py
 copy .env.example .env
 python seed_user.py
 ```
 - If `py` isn't recognized, use `python -m venv venv` instead.
 - **PowerShell only:** if activating says *"running scripts is disabled on this system"*, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, answer `Y`, then run `venv\Scripts\activate` again.
 - After activating, your prompt starts with `(venv)`. That's normal.
+- `pip install` takes **a few minutes** the first time: the face library for Register Resident is large.
+- `python faces.py` downloads the **face models** (about 280 MB) into `smarthal-backend/models/` and checks they load. It should end with `models ready`. Run it once; it's skipped automatically next time.
 - `seed_user.py` creates **your login** (there's no sign-up page). Pick a username and a password of at least 8 characters. **Nothing appears while you type the password; that's normal.** Type it again to confirm, then type `admin` for the role.
 - `.env` holds the camera's address and password. Leave it as it is unless you have the real camera details (ask Angel). Without them, everything works except the live video.
 
@@ -142,10 +148,10 @@ Wait for `http://localhost:5173`.
 |---|---|---|
 | **Login** | Checks your username and password | ✅ Real |
 | **Dashboard** | The home page, with buttons for every feature, **Change Password** and **Logout** | ✅ Real buttons; the status and alert cards show sample data |
-| **Live Feed** | The live camera video, with a green box around every face it detects | ✅ Real (needs the camera; see below) |
+| **Live Feed** | The live camera video. Every face gets a box: **green with the name** for a registered resident, **orange "Unknown"** for anyone else | ✅ Real (needs the camera; see below) |
 | **Change Password** | Asks for your current password, then a new one (8+ characters). Signs out any other device logged in to your account | ✅ Real |
 | **Event History / Event Detail** | A list of past detections | 🟡 Sample data |
-| **Register Resident** | Form to add a known person | 🟡 Mock; nothing is saved |
+| **Register Resident** | Registers a known person with the **webcam**: five photos (front, left, right, chin up, chin down), each taken automatically once their face is lined up in the on-screen oval for 3 seconds. Also lists registered residents, with **Delete** | ✅ Real (needs a webcam) |
 | **Alert Settings** | Notification switches | 🟡 Mock; resets on refresh |
 
 **Good to know:**
@@ -153,7 +159,9 @@ Wait for `http://localhost:5173`.
 - **More accounts:** run `python seed_user.py` again in `smarthal-backend` (with `(venv)` active).
 - **Forgot a password?** Run `python reset_password.py` in `smarthal-backend` (with `(venv)` active). It asks for the username and a new password.
 - **The live camera only works on the laptop it's plugged into** (Angel's), through Mac Internet Sharing. On any other computer, Live Feed says "Camera unreachable", which is expected.
-- **Face detection ≠ recognition:** the app sees *that* a face is there, not *whose* face it is. Recognition is planned for a later sprint.
+- **Registering a resident:** the browser asks for **camera permission** the first time; click Allow. Only the resident should be in view. If a photo is rejected (no face, two faces, or a different person than the front photo), that photo is outlined in red; click **Retake** under it. Registered residents' photos stay on your computer (`smarthal-backend/data/residents/`) and are never uploaded to GitHub.
+- **Deleting a resident:** only the person who registered them, or an admin, sees the **Delete** button.
+- **Recognition on Live Feed:** names appear within about a second of someone stepping into view, and update about 3 times a second. When it isn't sure, it says **Unknown**: calling a stranger a resident would be the worse mistake. Only registered residents get names, and newly registered or deleted residents take effect right away. Frames are analyzed in memory only; nothing from the camera is saved.
 
 ---
 
@@ -172,7 +180,11 @@ Wait for `http://localhost:5173`.
 | **"Too many attempts"** | 5 wrong passwords within 15 minutes. Wait (at most 15 minutes), or restart the backend to clear it. |
 | **"Address already in use"** / **"Port 5001 is in use"** | The backend is already running in another window. Use that one, or stop it with Ctrl + C first. |
 | **Live Feed says "Camera unreachable"** | Expected unless you're on the laptop the camera is plugged into. On that laptop: plug in the camera's Ethernet adapter and turn on **System Settings → General → Sharing → Internet Sharing**. It reconnects within a few seconds. |
-| Live Feed shows video but **never detects a face** | See "Things not to break" in section 6 (`crossOrigin="anonymous"`). |
+| `python faces.py` fails, or Register Resident says **"Couldn't register the resident"** right away | The face models didn't download. Check your internet connection and run `python faces.py` again (with `(venv)` active). |
+| Register Resident: **"Camera access was blocked"** | Allow the camera for `localhost:5173` in your browser (the camera icon in the address bar), then click Start Capture again. On Mac, also check **System Settings → Privacy & Security → Camera** for your browser. |
+| Register Resident: the oval never turns green | Move closer so your face fills the oval, face a light, and make sure only one person is in view. You can also press **Take Photo** to take it manually. |
+| Live Feed says **"Face recognition isn't working"** | The face models are missing. In `smarthal-backend` with `(venv)` active, run `python faces.py`, then restart the backend. |
+| A registered resident shows as **Unknown** on Live Feed | The security camera sees faces from higher up than the webcam did, so matches score lower. Face the camera and come closer; if it keeps happening, lower the threshold a little (`RECOGNITION_THRESHOLD=0.35` in `smarthal-backend/.env`, then restart the backend). Don't go much lower, or strangers could be mistaken for residents. |
 
 ---
 
@@ -191,22 +203,28 @@ smarthal/
     ├── app.py                ← the server and every endpoint
     ├── auth.py               ← password hashing, sessions, rate limiting
     ├── camera.py             ← reads the camera's RTSP stream on a background thread
+    ├── faces.py              ← face detection + face embeddings (InsightFace or OpenCV)
+    ├── recognition.py        ← names faces on the live camera against registered residents
     ├── db.py, schema.sql     ← SQLite database and its tables
     ├── seed_user.py          ← create an account
     ├── reset_password.py     ← reset a forgotten password
     ├── tests/                ← pytest tests
-    └── .env.example          ← copy to .env
+    ├── .env.example          ← copy to .env
+    ├── models/               ← face models, downloaded by faces.py (gitignored)
+    └── data/                 ← database + residents' photos (gitignored)
 ```
 Every file starts with a short summary, and every function has a one-to-three-line explanation. Good places to start: `smarthal-frontend/src/app/routes.js` and `smarthal-backend/app.py`.
 
 ### How it works
 ```
-Reolink camera → (RTSP) → Flask backend → (MJPEG over HTTP) → browser <img> → face-api.js draws boxes
+Reolink camera → (RTSP) → Flask backend ─┬→ (MJPEG over HTTP) → browser <img>
+                                         └→ recognition.py → GET /recognitions → boxes + names drawn over the <img>
 ```
 - **Video:** browsers can't play RTSP, so the backend reads the camera stream (`camera.py`) and re-serves it as MJPEG ("one JPEG after another"), which a plain `<img>` can show. It's capped at 10 frames per second.
-- **Face detection** runs in the browser (`face-api.js` in `LiveFeedScreen.jsx`), reading frames off that `<img>` about 5 times a second. The model downloads from a CDN, so the browser needs internet.
+- **Recognition** runs on the backend (`recognition.py`). While someone has Live Feed open, a background thread takes the newest camera frame about 3 times a second (shrunk to 1280 px; ~0.15 s per pass on an M2), finds the faces with InsightFace, and compares each one against **every saved angle of every resident**. Each resident's score is their best-matching angle; the best resident at or above the threshold (0.4 for InsightFace) gives the name, otherwise "Unknown". Live Feed polls `GET /recognitions` and draws the boxes on a canvas over the video. The thread stops when nobody has asked for 10 seconds, and frames are never saved.
 - **Login:** passwords are bcrypt-hashed in SQLite (`users` table). A login returns a random token, kept in the browser's `sessionStorage` and sent as `Authorization: Bearer <token>`. Sessions live in the backend's memory and expire after 30 minutes without activity. Every screen except `/login` is behind a route guard (`RequireAuth` in `AuthContext.jsx`).
 - **The video needs a login too:** an `<img>` can't send headers, so Live Feed first gets a short-lived **stream token** (60 seconds) and puts it in the video URL. An open stream re-checks the session every 5 seconds and stops when you log out.
+- **Register Resident:** the browser's webcam takes one photo per angle; `face-api.js` checks there's exactly one face, lined up with the guide oval, before each photo. The backend (`POST /residents`) checks every photo again with **InsightFace** (`faces.py`): exactly one face per photo, and every angle must look like the same person as the front photo. It stores one face **embedding** per angle in `resident_face_angles`, plus the photos (re-encoded, no metadata) in `data/residents/<id>/`. Recognition on the live feed will compare faces against every saved angle and keep the best match, so a resident seen from the side still matches.
 - **Camera disconnects:** `is_online()` checks how long ago the last frame arrived (5 s), because a dead RTSP connection can make `read()` hang. The open/read timeouts are passed to `cv2.VideoCapture(...)` when it's created; setting them afterward is silently ignored.
 
 ### Backend endpoints
@@ -221,6 +239,10 @@ Authenticated endpoints need `Authorization: Bearer <token>`. A missing or expir
 | `POST /stream-token` | bearer | `{"stream_token", "expires_in": 60}` for opening `/video_feed`. |
 | `GET /video_feed?stream_token=…` | stream token | The MJPEG camera stream. Fetch a new token for each reconnect. |
 | `GET /status` | bearer | `{"camera_online": true\|false}` |
+| `GET /recognitions` | bearer | Who's in view: `{"faces": [{"box": [x, y, w, h], "resident_id", "name", "score"}], "age_seconds", "threshold", "error", "camera_online"}`. `box` is fractions of the frame; `name` is `null` for Unknown. Polling it is what keeps recognition running. |
+| `POST /residents` | bearer | **Multipart** form: `name` (1–100 characters) plus five image files `front`, `left`, `right`, `up`, `down` (each under 5 MB). Each must contain exactly one face, and each angle must match the `front` photo. `201 {"resident": {"id", "name", "angles"}}`. A bad photo gives `400 {"error", "angle", "reason"}` (`missing`, `too_large`, `invalid_image`, `no_face`, `multiple_faces`, `different_person`) so the screen can ask for a retake of just that angle. |
+| `GET /residents` | bearer | `{"residents": [{"id", "name", "registered_by", "angles", "can_delete"}]}`, newest first. |
+| `DELETE /residents/<id>` | bearer | Deletes the resident, their embeddings and photos. Only the user who registered them, or an admin (`403` otherwise). `204`; `404` not found; `409` if recorded detection events refer to them. |
 
 ### Configuration
 **Backend, `smarthal-backend/.env`** (gitignored; never commit it):
@@ -230,6 +252,10 @@ Authenticated endpoints need `Authorization: Bearer <token>`. A missing or expir
 | `RTSP_URL` | (required) | The camera's full RTSP URL, password included. Kept only here, never in the database. |
 | `DB_PATH` | `data/dev.db` | SQLite file, relative to `smarthal-backend/`. `*.db` and `data/` are gitignored. |
 | `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated frontend origins allowed to call the API. `*` is refused on purpose. |
+| `FACE_BACKEND` | `insightface` | Face library for Register Resident: `insightface` (most accurate in our tests; pinned to 1.0.1, the tested version) or `opencv` (YuNet + SFace; ~7x faster, lighter). InsightFace's pretrained models are licensed for non-commercial use only. |
+| `FACE_MODELS_DIR` | `models` | Where `faces.py` downloads the face models. Gitignored. |
+| `RECOGNITION_THRESHOLD` | `0.4` (InsightFace), `0.363` (OpenCV) | How similar a camera face must be to a resident's saved angle to be named. Higher = fewer false matches but more residents shown as Unknown. |
+| `RESIDENT_PHOTOS_DIR` | `data/residents` | Where residents' photos are saved. Gitignored (photos of real people). |
 
 **Frontend, `smarthal-frontend/.env.development`** (gitignored): `VITE_BACKEND_URL` (default `http://localhost:5001`).
 
@@ -242,7 +268,9 @@ python -m pytest tests
 They use a fake camera and a temporary database, so they need neither the camera nor your real data.
 
 ### Things not to break
-- **Keep `crossOrigin="anonymous"` on the Live Feed `<img>`.** Without it, the browser silently blocks face-api.js from reading the video (the backend is a different origin), and detection just never fires.
+- **Keep `crossOrigin` before `src` on the Live Feed `<img>`.** Recognition runs on the backend now, so the browser doesn't read the video's pixels, but if `src` is set first, Safari opens the stream twice. (Register Resident still runs `face-api.js` in the browser, on the webcam.)
+- **When unsure, say Unknown.** Don't lower `RECOGNITION_THRESHOLD` to make matches "work": a stranger labeled as a resident is the failure a security camera must avoid.
 - **Port 5001, not Flask's default 5000:** on Mac, AirPlay Receiver uses port 5000.
 - **The backend binds to `127.0.0.1` only** and CORS allows only the frontend's origin. Don't change these to `0.0.0.0` or `*`.
-- **Never commit** `.env`, `.env.development`, `*.db`, `data/` or any password. The repo is public.
+- **Never commit** `.env`, `.env.development`, `*.db`, `data/`, `models/` or any password. The repo is public, and `data/residents/` holds photos of real people.
+- **Embeddings from different face libraries can't be compared.** Each saved angle records its `model`; if you switch `FACE_BACKEND`, residents registered with the other library need registering again.

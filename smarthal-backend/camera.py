@@ -105,6 +105,14 @@ class Camera:
             self._jpeg_frame_time = frame_time
             return self._jpeg
 
+    def get_frame(self):
+        """Return a copy of the newest raw frame (BGR array), or None if there's no frame yet.
+
+        Used by face recognition, which needs pixels rather than JPEG bytes.
+        """
+        with self._lock:
+            return None if self._frame is None else self._frame.copy()
+
     def is_online(self):
         """True if a frame arrived within the last STALE_AFTER_SECONDS (5 seconds)."""
         with self._lock:

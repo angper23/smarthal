@@ -1,40 +1,43 @@
 // Live Feed screen — the main feature of SmartHal
 // Streams the Reolink camera via the Flask backend (see /smarthal-backend)
-// and runs face-api.js against that stream to detect faces in real time,
-// drawing green bounding boxes on a canvas overlay on top of the feed
+// and shows who's in view: the backend recognizes faces against registered
+// residents (GET /recognitions), and this screen draws a box around each one
+// on a canvas overlay — green with the resident's name, orange for Unknown.
+// Styling is plain on purpose; Collin owns the design.
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router";
-import * as faceapi from "face-api.js";
 import { ArrowLeft, Circle, AlertTriangle, RefreshCw } from "lucide-react";
 import { apiFetch, BACKEND_URL, NetworkError } from "../api.js";
 
-// URL where the face detection AI model weights are downloaded from
-const MODEL_URL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model";
+// How often to ask the backend who's in view (it updates ~3 times a second)
+const RECOGNITION_POLL_MS = 400;
 
-// How often to scan for faces — 200ms means 5 times per second
-const DETECTION_INTERVAL_MS = 200;
+// Box colors on the video
+const RESIDENT_COLOR = "#16a34a"; // green
+const UNKNOWN_COLOR = "#ea580c";  // orange
+
+/** Short summary of the faces in view, e.g. "Jordan", "Unknown person", "Jordan + 1 unknown". */
+function describeFaces(faces) {
+  if (faces.length === 0) return "No Face Detected";
+  const names = faces.filter((f) => f.name).map((f) => f.name);
+  const unknown = faces.length - names.length;
+  const parts = [...new Set(names)];
+  if (unknown) parts.push(names.length ? `${unknown} unknown` : unknown === 1 ? "Unknown person" : `${unknown} unknown people`);
+  return parts.join(" + ");
+}
 
 // How often to check whether the backend can still reach the camera
 const STATUS_POLL_INTERVAL_MS = 8000;
 
-/** Live Feed screen (/live-feed): the camera stream with in-browser face detection. */
+/** Live Feed screen (/live-feed): the camera stream with resident recognition. */
 export function LiveFeedScreen() {
   const navigate = useNavigate();
 
-  // Ref to the <img> showing the backend's MJPEG stream — used to grab frames
+  // Ref to the <img> showing the backend's MJPEG stream — its size sets the canvas size
   const imgRef = useRef(null);
 
   // Ref to the canvas element — used to draw bounding boxes on top of the video
   const canvasRef = useRef(null);
-
-  // Ref to store the detection interval so we can clear it on unmount
-  const intervalRef = useRef(null);
-
-  // Whether the AI model has finished downloading and is ready to use
-  const [modelsLoaded, setModelsLoaded] = useState(false);
-
-  // Whether the model failed to download (e.g. no internet)
-  const [modelError, setModelError] = useState(false);
 
   // Whether the <img> failed to load the backend's video stream at all
   // (e.g. the Flask backend isn't running). Mirrored in a ref so the status
@@ -58,24 +61,12 @@ export function LiveFeedScreen() {
   // from /status rather than inferred from the browser (SRS NFR §5.1)
   const [cameraOnline, setCameraOnline] = useState(true);
 
-  // Whether a face is currently detected in the frame
-  const [faceDetected, setFaceDetected] = useState(false);
+  // Faces currently in view, from the backend: [{ box: [x, y, w, h] as
+  // fractions of the frame, name (null = Unknown), resident_id, score }]
+  const [faces, setFaces] = useState([]);
 
-  // How many faces are currently detected
-  const [faceCount, setFaceCount] = useState(0);
-
-  // On mount — download the face detection model from CDN
-  useEffect(() => {
-    faceapi.nets.tinyFaceDetector
-      .loadFromUri(MODEL_URL)
-      .then(() => setModelsLoaded(true))  // Model ready — detection can begin
-      .catch(() => setModelError(true));   // Load failed — show error message
-
-    // Cleanup: stop detection when the user leaves this screen
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, []);
+  // Set if the backend says recognition isn't working (e.g. face models missing)
+  const [recognitionError, setRecognitionError] = useState(null);
 
   // Open (or re-open) the video stream. Stream tokens are single-use and
   // expire after 60 seconds, so every connect fetches a fresh one
@@ -130,66 +121,79 @@ export function LiveFeedScreen() {
     };
   }, [connectStream]);
 
-  // Detection loop — runs every 200ms once models are loaded
-  const startDetection = useCallback(() => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-
-    intervalRef.current = setInterval(async () => {
-      const img = imgRef.current;
-      const canvas = canvasRef.current;
-
-      // Skip this tick if the stream image isn't loaded yet
-      if (!img || !img.complete || !img.naturalWidth || !canvas) return;
-
-      // Run face detection on the current stream frame
-      const detections = await faceapi.detectAllFaces(
-        img,
-        new faceapi.TinyFaceDetectorOptions({
-          inputSize: 320,       // Smaller = faster, less accurate
-          scoreThreshold: 0.5,  // Confidence required to count as a face
-        })
-      );
-
-      // Match canvas size to the actual image dimensions
-      const dims = { width: img.naturalWidth, height: img.naturalHeight };
-      canvas.width = dims.width;
-      canvas.height = dims.height;
-
-      const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear previous boxes
-
-      // Scale detection coordinates to match the canvas size
-      const resized = faceapi.resizeResults(detections, dims);
-
-      // Draw a green rectangle around each detected face
-      resized.forEach(({ box }) => {
-        ctx.strokeStyle = "#16a34a"; // Green
-        ctx.lineWidth = 3;
-        ctx.strokeRect(box.x, box.y, box.width, box.height);
-      });
-
-      // Update state to drive the status badge in the UI
-      setFaceCount(detections.length);
-      setFaceDetected(detections.length > 0);
-    }, DETECTION_INTERVAL_MS);
-  }, []);
-
-  // Start the detection loop as soon as the model is ready
+  // Ask the backend who's in view, a few times a second, while the stream is showing.
+  // Recognition runs on the backend (it has the residents' saved face angles); the
+  // backend pauses it on its own once nobody is asking
   useEffect(() => {
-    if (modelsLoaded) startDetection();
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+    if (!streamSrc || streamError) return;
+    let cancelled = false;
+    let busy = false;
+    const poll = async () => {
+      if (busy) return; // don't stack requests if one is slow
+      busy = true;
+      try {
+        const res = await apiFetch("/recognitions");
+        if (cancelled || !res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        setFaces(data.faces || []);
+        setRecognitionError(data.error || null);
+      } catch (err) {
+        if (!(err instanceof NetworkError)) throw err; // status poll shows "server unreachable"
+      } finally {
+        busy = false;
+      }
     };
-  }, [modelsLoaded, startDetection]);
+    poll();
+    const id = setInterval(poll, RECOGNITION_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      setFaces([]);
+    };
+  }, [streamSrc, streamError]);
 
-  // Retry downloading the model if it previously failed
-  const handleRetryModels = () => {
-    setModelError(false);
-    faceapi.nets.tinyFaceDetector
-      .loadFromUri(MODEL_URL)
-      .then(() => setModelsLoaded(true))
-      .catch(() => setModelError(true));
-  };
+  // Draw a box (and name label) around each face whenever the results change
+  useEffect(() => {
+    const img = imgRef.current;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    // Canvas uses the video's own pixel size; CSS stretches both the same way
+    const width = img?.naturalWidth || canvas.width;
+    const height = img?.naturalHeight || canvas.height;
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, width, height);
+    if (!img?.naturalWidth) return;
+
+    const line = Math.max(2, Math.round(height / 240));
+    const fontSize = Math.max(14, Math.round(height / 28));
+    ctx.font = `600 ${fontSize}px sans-serif`;
+    ctx.textBaseline = "top";
+
+    faces.forEach(({ box, name }) => {
+      const [x, y, w, h] = [box[0] * width, box[1] * height, box[2] * width, box[3] * height];
+      const color = name ? RESIDENT_COLOR : UNKNOWN_COLOR;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = line;
+      ctx.strokeRect(x, y, w, h);
+
+      // Name tag above the box (inside the top edge if there's no room above)
+      const label = name || "Unknown";
+      const pad = Math.round(fontSize * 0.3);
+      const tagW = ctx.measureText(label).width + pad * 2;
+      const tagH = fontSize + pad * 2;
+      const tagY = y - tagH >= 0 ? y - tagH : y;
+      ctx.fillStyle = color;
+      ctx.fillRect(x - line / 2, tagY, tagW, tagH);
+      ctx.fillStyle = "white";
+      ctx.fillText(label, x - line / 2 + pad, tagY + pad);
+    });
+  }, [faces]);
+
+  const summary = describeFaces(faces);
+  const anyUnknown = faces.some((f) => !f.name);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -222,18 +226,12 @@ export function LiveFeedScreen() {
             </span>
           </div>
           <div className="text-sm">
-            {/* Show loading state while model downloads */}
-            {!modelsLoaded && !modelError && (
-              <span className="text-gray-500">Loading detection models…</span>
-            )}
-            {/* Show error if model failed to load */}
-            {modelError && (
-              <span className="text-red-600">Model load failed</span>
-            )}
-            {/* Show live detection result once model is ready */}
-            {modelsLoaded && (
-              <span className={faceDetected ? "text-orange-600 font-medium" : "text-green-600"}>
-                {faceDetected ? `Person Detected (${faceCount})` : "No Face Detected"}
+            {/* Who's in view right now, from the backend's recognition */}
+            {recognitionError ? (
+              <span className="text-red-600">Recognition unavailable</span>
+            ) : (
+              <span className={anyUnknown ? "text-orange-600 font-medium" : faces.length ? "text-green-700 font-medium" : "text-gray-600"}>
+                {summary}
               </span>
             )}
           </div>
@@ -275,21 +273,17 @@ export function LiveFeedScreen() {
           </div>
         )}
 
-        {/* Error message shown if the AI model fails to download */}
-        {modelError && (
+        {/* Shown if the backend can't run recognition (e.g. face models not downloaded) */}
+        {recognitionError && !streamError && !backendUnreachable && (
           <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 shrink-0" />
             <div className="flex-1">
-              <p className="font-medium text-red-800">Failed to load detection models</p>
-              <p className="text-sm text-red-700 mt-1">Check your internet connection and try again.</p>
+              <p className="font-medium text-red-800">Face recognition isn't working</p>
+              <p className="text-sm text-red-700 mt-1">
+                The video still works. On the backend computer, run <code>python faces.py</code> in{" "}
+                <code>smarthal-backend</code> to download the face models, then restart the backend.
+              </p>
             </div>
-            <button
-              onClick={handleRetryModels}
-              className="flex items-center gap-1 text-sm text-red-700 border border-red-300 rounded px-2 py-1 hover:bg-red-100"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Retry
-            </button>
           </div>
         )}
 
@@ -299,12 +293,10 @@ export function LiveFeedScreen() {
             <div className="relative aspect-video bg-black">
 
               {/* MJPEG stream served by the Flask backend (see /smarthal-backend).
-                  crossOrigin is required because this <img> is on a different
-                  origin (port 5173 vs. the backend's 5001) — without it, the
-                  browser blocks face-api.js from reading pixel data off the
-                  image (a "tainted canvas"), so detection silently never fires.
-                  crossOrigin must also come BEFORE src: React sets attributes
-                  in this order, and if src lands first, Safari starts a
+                  Faces are recognized on the backend, so the browser never reads
+                  pixels off this image. crossOrigin stays so that can be added back
+                  without surprises, and it must come BEFORE src: React sets
+                  attributes in this order, and if src lands first, Safari starts a
                   non-CORS request and restarts it once crossOrigin appears —
                   opening the stream twice for every connect */}
               {streamSrc && (
@@ -331,15 +323,15 @@ export function LiveFeedScreen() {
                 <p className="text-sm text-gray-600">Resolution: 1080p</p>
                 <p className="text-sm text-gray-600">Location: Main Entrance</p>
               </div>
-              {/* Detection status badge — changes colour based on result */}
+              {/* Who's in view — orange if anyone is Unknown, green if only residents */}
               <div
                 className={`px-3 py-1 rounded-full text-sm font-medium border-2 ${
-                  faceDetected
+                  anyUnknown
                     ? "bg-orange-50 text-orange-700 border-orange-300"
                     : "bg-green-50 text-green-700 border-green-300"
                 }`}
               >
-                {faceDetected ? `Person Detected (${faceCount})` : "No Face Detected"}
+                {summary}
               </div>
             </div>
           </div>

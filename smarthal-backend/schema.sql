@@ -29,6 +29,21 @@ CREATE TABLE IF NOT EXISTS residents (
     photo_path       TEXT
 );
 
+-- One face embedding per capture angle, taken with the webcam at registration.
+-- Recognition compares a camera face against every angle and keeps the best
+-- match, so a resident seen from the side still matches. residents.facial_embedding
+-- stays NULL; the embeddings live here. `model` records which face library made
+-- the embedding: embeddings from different libraries can't be compared.
+CREATE TABLE IF NOT EXISTS resident_face_angles (
+    id          INTEGER PRIMARY KEY,
+    resident_id INTEGER NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
+    angle       TEXT    NOT NULL CHECK (angle IN ('front', 'left', 'right', 'up', 'down')),
+    embedding   BLOB    NOT NULL,
+    model       TEXT    NOT NULL,
+    photo_path  TEXT,
+    UNIQUE (resident_id, angle)
+);
+
 -- Each time the camera sees a face (Event History, a later sprint).
 CREATE TABLE IF NOT EXISTS detection_events (
     id                INTEGER PRIMARY KEY,
