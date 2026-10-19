@@ -2,7 +2,8 @@
 // Streams the Reolink camera via the Flask backend (see /smarthal-backend)
 // and shows who's in view: the backend recognizes faces against registered
 // residents (GET /recognitions), and this screen draws a box around each one
-// on a canvas overlay — green with the resident's name, orange for Unknown.
+// on a canvas overlay — green with the resident's name, orange for Unknown,
+// red if a resident's face looks like a photo or screen (liveness check).
 // Styling is plain on purpose; Collin owns the design.
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router";
@@ -12,17 +13,27 @@ import { apiFetch, BACKEND_URL, NetworkError } from "../api.js";
 // How often to ask the backend who's in view (it updates ~3 times a second)
 const RECOGNITION_POLL_MS = 400;
 
-// Box colors on the video
-const RESIDENT_COLOR = "#16a34a"; // green
-const UNKNOWN_COLOR = "#ea580c";  // orange
+// How each kind of face is drawn. status comes from the backend: a resident's
+// name is only shown once the liveness check says it's a real person
+const FACE_STYLES = {
+  resident: { color: "#16a34a" },                                     // green, resident's name
+  unknown: { color: "#ea580c", label: "Unknown" },                    // orange
+  too_far: { color: "#ea580c", label: "Unknown (come closer)" },      // too small to check
+  checking: { color: "#64748b", label: "Checking…" },                 // slate, deciding real vs photo
+  spoof: { color: "#dc2626", label: "Unknown (possible photo)" },     // red, looked like a photo/screen
+  unverified: { color: "#64748b", label: "Unverified" },              // liveness check not working
+};
 
 /** Short summary of the faces in view, e.g. "Jordan", "Unknown person", "Jordan + 1 unknown". */
 function describeFaces(faces) {
   if (faces.length === 0) return "No Face Detected";
+  if (faces.some((f) => f.status === "spoof")) return "Possible photo or screen!";
   const names = faces.filter((f) => f.name).map((f) => f.name);
-  const unknown = faces.length - names.length;
+  const checking = faces.filter((f) => f.status === "checking").length;
+  const unknown = faces.length - names.length - checking;
   const parts = [...new Set(names)];
-  if (unknown) parts.push(names.length ? `${unknown} unknown` : unknown === 1 ? "Unknown person" : `${unknown} unknown people`);
+  if (checking) parts.push("Checking…");
+  if (unknown) parts.push(parts.length ? `${unknown} unknown` : unknown === 1 ? "Unknown person" : `${unknown} unknown people`);
   return parts.join(" + ");
 }
 
@@ -172,15 +183,16 @@ export function LiveFeedScreen() {
     ctx.font = `600 ${fontSize}px sans-serif`;
     ctx.textBaseline = "top";
 
-    faces.forEach(({ box, name }) => {
+    faces.forEach(({ box, name, status }) => {
       const [x, y, w, h] = [box[0] * width, box[1] * height, box[2] * width, box[3] * height];
-      const color = name ? RESIDENT_COLOR : UNKNOWN_COLOR;
+      const style = FACE_STYLES[status] || FACE_STYLES[name ? "resident" : "unknown"];
+      const color = style.color;
       ctx.strokeStyle = color;
       ctx.lineWidth = line;
       ctx.strokeRect(x, y, w, h);
 
       // Name tag above the box (inside the top edge if there's no room above)
-      const label = name || "Unknown";
+      const label = name || style.label || "Unknown";
       const pad = Math.round(fontSize * 0.3);
       const tagW = ctx.measureText(label).width + pad * 2;
       const tagH = fontSize + pad * 2;
@@ -194,6 +206,7 @@ export function LiveFeedScreen() {
 
   const summary = describeFaces(faces);
   const anyUnknown = faces.some((f) => !f.name);
+  const livenessBroken = recognitionError?.startsWith("Liveness");
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -227,7 +240,7 @@ export function LiveFeedScreen() {
           </div>
           <div className="text-sm">
             {/* Who's in view right now, from the backend's recognition */}
-            {recognitionError ? (
+            {recognitionError && !livenessBroken ? (
               <span className="text-red-600">Recognition unavailable</span>
             ) : (
               <span className={anyUnknown ? "text-orange-600 font-medium" : faces.length ? "text-green-700 font-medium" : "text-gray-600"}>
@@ -278,11 +291,24 @@ export function LiveFeedScreen() {
           <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 shrink-0" />
             <div className="flex-1">
-              <p className="font-medium text-red-800">Face recognition isn't working</p>
-              <p className="text-sm text-red-700 mt-1">
-                The video still works. On the backend computer, run <code>python faces.py</code> in{" "}
-                <code>smarthal-backend</code> to download the face models, then restart the backend.
-              </p>
+              {livenessBroken ? (
+                <>
+                  <p className="font-medium text-red-800">The photo check isn't working</p>
+                  <p className="text-sm text-red-700 mt-1">
+                    Residents' names are hidden until it's fixed, so a photo can't pass as a resident.
+                    Check that <code>smarthal-backend/liveness_models/</code> has its two model files, then
+                    restart the backend.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="font-medium text-red-800">Face recognition isn't working</p>
+                  <p className="text-sm text-red-700 mt-1">
+                    The video still works. On the backend computer, run <code>python faces.py</code> in{" "}
+                    <code>smarthal-backend</code> to download the face models, then restart the backend.
+                  </p>
+                </>
+              )}
             </div>
           </div>
         )}
