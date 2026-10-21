@@ -25,7 +25,8 @@ You set both up once (sections 1 or 2), then start both whenever you want to use
 
 **Step 1: Install the tools** (skip any you already have):
 - **Node.js:** download the **LTS** version from [nodejs.org](https://nodejs.org) and run the installer.
-- **Python 3.9 or newer:** most Macs already have it. Check by opening **Terminal** and typing `python3 --version`. If it's missing, install it from [python.org](https://www.python.org/downloads/).
+- **Python 3.9 to 3.14:** most Macs already have a version that works. Check by opening **Terminal** and typing `python3 --version`. If it's missing, install **Python 3.12** from [python.org](https://www.python.org/downloads/).
+  - ⚠️ **Python 3.15 or newer won't work yet:** the face-model package (`onnxruntime`) doesn't support it. If you have it, install **3.12** alongside it (you don't need to remove the newer one) and in Step 3 use `python3.12 -m venv venv` instead of `python3 -m venv venv`.
 - **Git:** type `git --version` in Terminal. If it asks to install developer tools, click **Install**.
 
 **Step 2: Download the code.** In Terminal:
@@ -45,6 +46,7 @@ cp .env.example .env
 python seed_user.py
 ```
 - After `source venv/bin/activate`, your prompt starts with `(venv)`. That's normal: it means the project's Python packages are active.
+- To make sure the venv got a supported Python, run `python --version` after activating: it should say 3.9 to 3.14.
 - `pip install` takes **a few minutes** the first time: the face library for Register Resident is large.
 - `python faces.py` downloads the **face models** (about 280 MB) into `smarthal-backend/models/` and checks they load. It should end with `models ready`. Run it once; it's skipped automatically next time.
 - `seed_user.py` creates **your login** (there's no sign-up page). Pick a username and a password of at least 8 characters. **Nothing appears while you type the password; that's normal.** Type it again to confirm, then type `admin` for the role.
@@ -67,7 +69,8 @@ cp .env.example .env.development
 
 **Step 1: Install the tools** (skip any you already have):
 - **Node.js:** download the **LTS** version from [nodejs.org](https://nodejs.org) and run the installer.
-- **Python 3.9 or newer:** download it from [python.org](https://www.python.org/downloads/). ⚠️ On the installer's **first screen, tick "Add python.exe to PATH"** before clicking Install.
+- **Python 3.9 to 3.14:** download **Python 3.12** from [python.org](https://www.python.org/downloads/) (scroll to "Looking for a specific release?"). ⚠️ On the installer's **first screen, tick "Add python.exe to PATH"** before clicking Install.
+  - ⚠️ **Python 3.15 or newer won't work yet:** the face-model package (`onnxruntime`) doesn't support it. Check what you have with `py --list`. If you have 3.15, install **3.12** alongside it (you don't need to remove the newer one) and in Step 3 use `py -3.12 -m venv venv` instead of `py -m venv venv`.
 - **Git:** download it from [git-scm.com](https://git-scm.com) and install with the default options.
 
 After installing, **close and reopen** your terminal so it picks up the new tools.
@@ -89,6 +92,7 @@ copy .env.example .env
 python seed_user.py
 ```
 - If `py` isn't recognized, use `python -m venv venv` instead.
+- To make sure the venv got a supported Python, run `python --version` after activating: it should say 3.9 to 3.14 (3.12 recommended).
 - **PowerShell only:** if activating says *"running scripts is disabled on this system"*, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, answer `Y`, then run `venv\Scripts\activate` again.
 - After activating, your prompt starts with `(venv)`. That's normal.
 - `pip install` takes **a few minutes** the first time: the face library for Register Resident is large.
@@ -173,6 +177,7 @@ Wait for `http://localhost:5173`.
 | **Windows:** `'py' is not recognized…` | Use `python -m venv venv` instead. If `python` opens the Microsoft Store or isn't found either, reinstall Python from python.org with **"Add python.exe to PATH"** ticked, then reopen the terminal. |
 | **Windows PowerShell:** *"running scripts is disabled on this system"* | Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, answer `Y`, then activate again. Or use Command Prompt instead. |
 | **Mac:** `python3: command not found` | Install Python from python.org, then open a new Terminal window. |
+| `No matching distribution found for onnxruntime` (often with *"Ignored the following versions that require a different python version…"*) | Your Python is too new (3.15 or newer). Install **Python 3.12** alongside it, then in `smarthal-backend` delete the old venv (Windows: `rmdir /s /q venv`, Mac: `rm -rf venv`) and recreate it with 3.12: `py -3.12 -m venv venv` (Windows) or `python3.12 -m venv venv` (Mac). Activate it, check `python --version` says 3.12, then `pip install -r requirements.txt` and `python faces.py` again. |
 | `No module named flask` (or `dotenv`, `cv2`, `bcrypt`) | The `venv` isn't active. Activate it (your prompt should start with `(venv)`), then run `python app.py` again. |
 | `npm: command not found` / `'npm' is not recognized` | Install Node.js (LTS) from nodejs.org, then reopen the terminal. |
 | Login page says **"Can't reach the server"** | The backend window isn't running, or it stopped with an error. Check Window 1. |
