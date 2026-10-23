@@ -5,10 +5,16 @@ the faces in it, and compares each one against every saved angle of every
 registered resident (resident_face_angles). The best match above the
 threshold gives the resident's name; anything else is "Unknown".
 
+With liveness checking on (liveness.py), a matching face only gets the
+resident's name once it has also looked like a real person, not a photo or
+phone screen, in most recent passes. A face that keeps looking fake is
+reported as a possible photo; one too small to judge stays Unknown.
+
 Frames are only analyzed in memory: nothing is saved. The thread only works
 while someone has Live Feed open (it pauses when nobody has asked for results
 recently), so an unwatched camera costs no CPU.
 """
+import collections
 import os
 import threading
 import time
@@ -28,6 +34,20 @@ INTERVAL_SECONDS = 0.3
 
 # Stop working if nobody has asked for results for this long.
 IDLE_AFTER_SECONDS = 10
+
+# Liveness is judged over the last few passes of the same resident, so one blurry
+# frame doesn't flip the result and one lucky frame can't let a photo through.
+LIVENESS_HISTORY = 5   # passes remembered (~1.5 s)
+LIVENESS_VOTES = 3     # how many must agree to call it real (or fake)
+LIVENESS_FORGET_SECONDS = 3  # start over if the resident leaves the view this long
+
+# What each face is, in the results:
+#   resident  - matched a resident and looks real: name shown
+#   unknown   - doesn't match any resident
+#   checking  - matches a resident; liveness not decided yet (name hidden)
+#   spoof     - matches a resident but looks like a photo or screen (name hidden)
+#   too_far   - matches a resident but too small to check liveness (name hidden)
+#   unverified - matches a resident but the liveness check isn't working (name hidden)
 
 
 class ResidentGallery:
@@ -88,10 +108,18 @@ class Recognizer:
     background=False runs one pass per request instead of a thread (used by tests).
     """
 
-    def __init__(self, camera, engine, threshold=None, background=True, clock=time.monotonic):
-        """camera: has get_frame(). engine: has detect_faces(img), model and match_threshold."""
+    def __init__(self, camera, engine, threshold=None, background=True, clock=time.monotonic,
+                 liveness=None):
+        """camera: has get_frame(). engine: has detect_faces(img), model and match_threshold.
+
+        liveness: has real_score(frame, box), threshold and min_face_px (a liveness.LivenessChecker),
+        or None to name residents without a liveness check.
+        """
         self.camera = camera
         self.engine = engine
+        self.liveness = liveness
+        self._votes = {}  # resident id -> (deque of recent real/fake votes, last time seen)
+        self._liveness_error = None
         env = os.environ.get("RECOGNITION_THRESHOLD")
         self.threshold = threshold if threshold is not None else (float(env) if env else engine.match_threshold)
         self.background = background
@@ -128,16 +156,20 @@ class Recognizer:
     def run_once(self):
         """Analyze the newest camera frame once and store the result."""
         frame = self.camera.get_frame()
+        self._liveness_error = None
         try:
             faces = [] if frame is None else self.recognize(frame)
-            error = None
+            error = self._liveness_error
         except Exception as exc:  # e.g. models failed to load; keep the thread alive
             faces, error = [], f"Recognition unavailable: {type(exc).__name__}"
         with self._lock:
             self._result = {"faces": faces, "updated": self._clock(), "error": error}
 
     def recognize(self, frame):
-        """Return one entry per face in the frame: box (fractions of the frame), name or None, score."""
+        """Return one entry per face in the frame: box (fractions of the frame), status, name or None, score.
+
+        name is only set when status is "resident" (see the status list at the top of this file).
+        """
         h, w = frame.shape[:2]
         scale = min(1.0, MAX_SIDE / max(h, w))
         img = cv2.resize(frame, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA) if scale < 1 else frame
@@ -152,14 +184,47 @@ class Recognizer:
             x, y = x0, y0
             resident_id, score = gallery.best_match(emb)
             known = resident_id is not None and score >= self.threshold
+            status, live = "unknown", None
+            if known:
+                # Liveness looks at the full-size frame, not the shrunk copy: fine
+                # texture is what tells a real face from a print or a screen
+                full_box = (x / scale, y / scale, bw / scale, bh / scale)
+                status, live = self._liveness_status(resident_id, frame, full_box)
             out.append({
                 # As fractions of the frame, so the browser can scale them to any display size
                 "box": [round(x / iw, 4), round(y / ih, 4), round(bw / iw, 4), round(bh / ih, 4)],
-                "resident_id": resident_id if known else None,
-                "name": gallery.names[resident_id] if known else None,
+                "status": status,
+                "resident_id": resident_id if status == "resident" else None,
+                "name": gallery.names[resident_id] if status == "resident" else None,
                 "score": round(score, 3),
+                "liveness": None if live is None else round(live, 3),
             })
         return out
+
+    def _liveness_status(self, resident_id, frame, full_box):
+        """Decide whether a face that matched a resident is a real person. Returns (status, score)."""
+        if self.liveness is None:
+            return "resident", None
+        if full_box[3] < self.liveness.min_face_px:
+            return "too_far", None  # too small to judge: Unknown until they come closer
+        try:
+            live = self.liveness.real_score(frame, full_box)
+        except Exception as exc:  # e.g. model files missing: never show the name unchecked
+            self._liveness_error = f"Liveness check unavailable: {exc}"
+            return "unverified", None
+
+        now = self._clock()
+        votes, last_seen = self._votes.get(resident_id, (None, None))
+        if votes is None or now - last_seen > LIVENESS_FORGET_SECONDS:
+            votes = collections.deque(maxlen=LIVENESS_HISTORY)
+        votes.append(live >= self.liveness.threshold)
+        self._votes[resident_id] = (votes, now)
+
+        if sum(votes) >= LIVENESS_VOTES:
+            return "resident", live
+        if len(votes) - sum(votes) >= LIVENESS_VOTES:
+            return "spoof", live
+        return "checking", live
 
     def _current_gallery(self):
         """Return the resident gallery, reloading it from the database if it changed."""

@@ -13,13 +13,13 @@ export function DashboardScreen() {
     <div className="min-h-screen">
 
       {/* Top header bar */}
-      <div className=" border-b-2 border-border p-4 flex items-center gap-3">
+      <div className="bg-window border-b-2 border-border p-4 flex items-center gap-3">
         <h1 className="text-bgtext">SmartHal Dashboard</h1>
         <div className="ml-auto flex items-center gap-3">
-          {user && <span className="text-sm text-gray-600">{user.username}</span>}
+          {user && <span className="text-sm text-bgtext">{user.username}</span>}
           <button
             onClick={() => navigate("/change-password")}
-            className="flex items-center gap-1 text-sm bg-white border-2 border-gray-300 rounded px-3 py-1 hover:bg-gray-100"
+            className="flex items-center gap-1 text-sm bg-panel border-2 border-border rounded px-3 py-1 hover:bg-gray-100"
           >
             <KeyRound className="w-4 h-4" />
             Change Password
@@ -27,7 +27,7 @@ export function DashboardScreen() {
           {/* Ends the session on the backend; the route guard then sends us to /login */}
           <button
             onClick={logout}
-            className="flex items-center gap-1 text-sm bg-white border-2 border-gray-300 rounded px-3 py-1 hover:bg-gray-100"
+            className="flex items-center gap-1 text-sm bg-panel border-2 border-border rounded px-3 py-1 hover:bg-gray-100"
           >
             <LogOut className="w-4 h-4" />
             Logout

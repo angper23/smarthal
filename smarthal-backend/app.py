@@ -19,6 +19,7 @@ from flask_cors import CORS
 
 import auth
 import faces
+from liveness import LivenessChecker
 from recognition import Recognizer
 from db import BACKEND_DIR, get_connection, init_db
 
@@ -100,7 +101,8 @@ def create_app(camera, sessions=None, login_limiter=None, password_limiter=None,
         and match_threshold (default: faces.LazyEngine, which loads the real models on first use;
         tests pass a fake).
     recognizer: Live Feed recognition (default: a background recognition.Recognizer on this
-        camera and engine; tests pass one with background=False).
+        camera and engine, with liveness checking unless LIVENESS_CHECK=off; tests pass one
+        with background=False).
     """
     sessions = sessions or auth.SessionStore()
     login_limiter = login_limiter or auth.LoginRateLimiter()
@@ -108,7 +110,9 @@ def create_app(camera, sessions=None, login_limiter=None, password_limiter=None,
     # logins so a hijacked session can't be used to guess the password.
     password_limiter = password_limiter or auth.LoginRateLimiter()
     face_engine = face_engine or faces.LazyEngine()
-    recognizer = recognizer or Recognizer(camera, face_engine)
+    # Liveness is on unless LIVENESS_CHECK=off in .env (e.g. to test recognition alone)
+    liveness_on = os.environ.get("LIVENESS_CHECK", "on").lower() not in ("off", "0", "false", "no")
+    recognizer = recognizer or Recognizer(camera, face_engine, liveness=LivenessChecker() if liveness_on else None)
 
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
@@ -307,9 +311,10 @@ def create_app(camera, sessions=None, login_limiter=None, password_limiter=None,
     def recognitions():
         """GET /recognitions: who's in front of the camera right now.
 
-        Returns {faces: [{box, resident_id, name, score}], age_seconds, threshold, error}.
-        box is [x, y, width, height] as fractions of the frame; name is null for an Unknown
-        face. Live Feed polls this a few times a second; recognition pauses when nobody does.
+        Returns {faces: [{box, status, resident_id, name, score, liveness}], age_seconds,
+        threshold, error}. box is [x, y, width, height] as fractions of the frame. status is
+        resident, unknown, checking, spoof, too_far or unverified; name is only set for
+        resident (a match that also passed the liveness check). Live Feed polls this a few times a second; recognition pauses when nobody does.
         """
         result = recognizer.latest()
         result["camera_online"] = camera.is_online()

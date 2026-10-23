@@ -48,14 +48,14 @@ export function EventHistoryScreen() {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
 
       {/* Header with back button */}
-      <div className="bg-white border-b-2 border-gray-300 p-4 flex items-center gap-3">
+      <div className="bg-window border-b-2 border-border p-4 flex items-center gap-3">
         <button onClick={() => navigate("/dashboard")} className="p-1 hover:bg-gray-100 rounded">
-          <ArrowLeft className="w-6 h-6" />
+          <ArrowLeft className="w-6 h-6 text-bgtext" />
         </button>
-        <h1 className="text-2xl">Event History</h1>
+        <h1 className="text-2xl text-bgtext">Event History</h1>
       </div>
 
       <div className="p-4">
@@ -65,7 +65,7 @@ export function EventHistoryScreen() {
             <button
               key={event.id}
               onClick={() => navigate(`/event-detail/${event.id}`)} // Pass event ID in URL
-              className="w-full bg-white border-2 border-gray-300 rounded-lg p-4 hover:bg-gray-100 text-left"
+              className="w-full bg-panel border-2 border-border rounded-lg p-4 hover:bg-border text-left"
             >
               <div className="flex items-start gap-3">
                 {/* Show a different icon depending on whether the person is known or unknown */}
@@ -87,8 +87,8 @@ export function EventHistoryScreen() {
                       {event.classification}
                     </span>
                   </div>
-                  <p className="mb-1">{event.description}</p>
-                  <p className="text-sm text-gray-600">{event.timestamp}</p>
+                  <p className="mb-1 text-wintext">{event.description}</p>
+                  <p className="text-sm text-bgtextb">{event.timestamp}</p>
                 </div>
               </div>
             </button>

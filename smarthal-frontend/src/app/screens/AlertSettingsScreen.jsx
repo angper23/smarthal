@@ -25,32 +25,32 @@ export function AlertSettingsScreen() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
 
       {/* Header with back button */}
-      <div className="bg-white border-b-2 border-gray-300 p-4 flex items-center gap-3">
+      <div className="bg-window border-b-2 border-border p-4 flex items-center gap-3">
         <button onClick={() => navigate("/dashboard")} className="p-1 hover:bg-gray-100 rounded">
-          <ArrowLeft className="w-6 h-6" />
+          <ArrowLeft className="w-6 h-6 text-bgtext" />
         </button>
-        <h1 className="text-2xl">Alert Settings</h1>
+        <h1 className="text-2xl text-bgtext">Alert Settings</h1>
       </div>
 
       <div className="p-4">
         <form onSubmit={handleSave} className="space-y-4">
 
           {/* Master alerts toggle — controls whether any alerts are sent at all */}
-          <div className="bg-white border-2 border-gray-300 rounded-lg p-4">
+          <div className="bg-window border-2 border-border rounded-lg p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="mb-1">Enable Alerts</p>
-                <p className="text-sm text-gray-600">Receive notifications for detected events</p>
+                <p className="mb-1 text-bgtext">Enable Alerts</p>
+                <p className="text-sm text-bgtextb">Receive notifications for detected events</p>
               </div>
               {/* Custom toggle switch — visually slides when clicked */}
               <button
                 type="button"
                 onClick={() => setAlertsEnabled(!alertsEnabled)}
                 className={`relative w-14 h-8 rounded-full border-2 transition-colors ${
-                  alertsEnabled ? "bg-gray-800 border-gray-800" : "bg-gray-200 border-gray-300"
+                  alertsEnabled ? "bg-panel border-border" : "bg-window border-border"
                 }`}
               >
                 {/* The sliding circle inside the toggle */}
@@ -64,23 +64,23 @@ export function AlertSettingsScreen() {
           </div>
 
           {/* Alert type toggles — greyed out if master alerts are disabled */}
-          <div className="bg-white border-2 border-gray-300 rounded-lg p-4">
-            <h2 className="text-lg mb-4">Alert Types</h2>
+          <div className="bg-window border-2 border-border rounded-lg p-4">
+            <h2 className="text-lg mb-4 text-bgtext">Alert Types</h2>
 
             <div className="space-y-4">
 
               {/* Push notification toggle */}
-              <div className="flex items-center justify-between pb-4 border-b-2 border-gray-200">
+              <div className="flex items-center justify-between pb-4 border-b-2 border-border">
                 <div>
-                  <p className="mb-1">Push Notifications</p>
-                  <p className="text-sm text-gray-600">Receive alerts on this device</p>
+                  <p className="mb-1 text-bgtext">Push Notifications</p>
+                  <p className="text-sm text-bgtextb">Receive alerts on this device</p>
                 </div>
                 {/* disabled prop greys it out when master alerts are off */}
                 <input
                   type="checkbox"
                   checked={pushNotifications}
                   onChange={(e) => setPushNotifications(e.target.checked)}
-                  className="w-5 h-5 border-2 border-gray-300 rounded"
+                  className="w-5 h-5 border-2 border-border rounded"
                   disabled={!alertsEnabled}
                 />
               </div>
@@ -88,14 +88,14 @@ export function AlertSettingsScreen() {
               {/* Email notification toggle */}
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="mb-1">Email Notifications</p>
-                  <p className="text-sm text-gray-600">Receive alerts via email</p>
+                  <p className="mb-1 text-bgtext">Email Notifications</p>
+                  <p className="text-sm text-bgtextb">Receive alerts via email</p>
                 </div>
                 <input
                   type="checkbox"
                   checked={emailNotifications}
                   onChange={(e) => setEmailNotifications(e.target.checked)}
-                  className="w-5 h-5 border-2 border-gray-300 rounded"
+                  className="w-5 h-5 border-2 border-border rounded"
                   disabled={!alertsEnabled}
                 />
               </div>
@@ -104,14 +104,14 @@ export function AlertSettingsScreen() {
 
           {/* Email address input — only shown if email notifications are turned on */}
           {emailNotifications && alertsEnabled && (
-            <div className="bg-white border-2 border-gray-300 rounded-lg p-4">
-              <label htmlFor="email" className="block text-sm mb-2 text-gray-700">
+            <div className="bg-window border-2 border-border rounded-lg p-4">
+              <label htmlFor="email" className="block text-sm mb-2 text-bgtext">
                 Email Address
               </label>
               <input
                 id="email"
                 type="email"
-                className="w-full px-4 py-2 border-2 border-gray-300 rounded bg-white"
+                className="w-full px-4 py-2 border-2 border-border rounded bg-panel"
                 placeholder="Enter email address"
               />
             </div>
@@ -120,7 +120,7 @@ export function AlertSettingsScreen() {
           {/* Save button — triggers handleSave */}
           <button
             type="submit"
-            className="w-full py-3 bg-gray-800 text-white rounded border-2 border-gray-800 hover:bg-gray-700"
+            className="w-full py-3 bg-panel text-wintext rounded border-2 border-border hover:bg-border"
           >
             Save Settings
           </button>

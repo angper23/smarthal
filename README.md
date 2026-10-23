@@ -1,6 +1,6 @@
 # SmartHal
 
-A home security monitoring prototype (CPSC 355 capstone). A camera watches the door, and the app shows the live video behind a real login, with every face labeled: a registered resident's name in green, or "Unknown" in orange. Residents are registered with the webcam (five face angles each).
+A home security monitoring prototype (CPSC 355 capstone). A camera watches the door, and the app shows the live video behind a real login, with every face labeled: a registered resident's name in green (after checking it's a real person, not a photo), or "Unknown" in orange. Residents are registered with the webcam (five face angles each).
 
 **Contents**
 1. [Install on Mac](#1-install-on-mac)
@@ -152,7 +152,7 @@ Wait for `http://localhost:5173`.
 |---|---|---|
 | **Login** | Checks your username and password | ✅ Real |
 | **Dashboard** | The home page, with buttons for every feature, **Change Password** and **Logout** | ✅ Real buttons; the status and alert cards show sample data |
-| **Live Feed** | The live camera video. Every face gets a box: **green with the name** for a registered resident, **orange "Unknown"** for anyone else | ✅ Real (needs the camera; see below) |
+| **Live Feed** | The live camera video. Every face gets a box: **green with the name** for a registered resident (after a quick check that it's a real person, not a photo), **orange "Unknown"** for anyone else, **red "possible photo"** if a resident's face looks like a photo or screen | ✅ Real (needs the camera; see below) |
 | **Change Password** | Asks for your current password, then a new one (8+ characters). Signs out any other device logged in to your account | ✅ Real |
 | **Event History / Event Detail** | A list of past detections | 🟡 Sample data |
 | **Register Resident** | Registers a known person with the **webcam**: five photos (front, left, right, chin up, chin down), each taken automatically once their face is lined up in the on-screen oval for 3 seconds. Also lists registered residents, with **Delete** | ✅ Real (needs a webcam) |
@@ -166,6 +166,7 @@ Wait for `http://localhost:5173`.
 - **Registering a resident:** the browser asks for **camera permission** the first time; click Allow. Only the resident should be in view. If a photo is rejected (no face, two faces, or a different person than the front photo), that photo is outlined in red; click **Retake** under it. Registered residents' photos stay on your computer (`smarthal-backend/data/residents/`) and are never uploaded to GitHub.
 - **Deleting a resident:** only the person who registered them, or an admin, sees the **Delete** button.
 - **Recognition on Live Feed:** names appear within about a second of someone stepping into view, and update about 3 times a second. When it isn't sure, it says **Unknown**: calling a stranger a resident would be the worse mistake. Only registered residents get names, and newly registered or deleted residents take effect right away. Frames are analyzed in memory only; nothing from the camera is saved.
+- **Photo check (liveness):** before showing a resident's name, Live Feed checks the face is a real person and not a printed photo or a phone screen held up to the camera. A resident shows **"Checking…"** for about a second first. A photo of a resident shows as **"Unknown (possible photo)"** in red. A resident too far away to check shows as **"Unknown (come closer)"**. It makes faking a resident much harder, but not impossible (a good screen held close or a realistic mask can still fool it).
 
 ---
 
@@ -190,6 +191,8 @@ Wait for `http://localhost:5173`.
 | Register Resident: the oval never turns green | Move closer so your face fills the oval, face a light, and make sure only one person is in view. You can also press **Take Photo** to take it manually. |
 | Live Feed says **"Face recognition isn't working"** | The face models are missing. In `smarthal-backend` with `(venv)` active, run `python faces.py`, then restart the backend. |
 | A registered resident shows as **Unknown** on Live Feed | The security camera sees faces from higher up than the webcam did, so matches score lower. Face the camera and come closer; if it keeps happening, lower the threshold a little (`RECOGNITION_THRESHOLD=0.35` in `smarthal-backend/.env`, then restart the backend). Don't go much lower, or strangers could be mistaken for residents. |
+| A resident stays on **"Checking…"** or shows **"possible photo"** | The photo check is unsure: usually poor light, motion blur, or the face is small or steeply angled. Face the camera in good light and come closer. If it keeps happening for real people, the check can be relaxed a little with `LIVENESS_THRESHOLD=0.4` in `smarthal-backend/.env` (restart the backend). |
+| Live Feed says **"The photo check isn't working"** | The liveness model files are missing from `smarthal-backend/liveness_models/`. Pull the latest code (they're part of the repo), then restart the backend. |
 
 ---
 
@@ -210,6 +213,8 @@ smarthal/
     ├── camera.py             ← reads the camera's RTSP stream on a background thread
     ├── faces.py              ← face detection + face embeddings (InsightFace or OpenCV)
     ├── recognition.py        ← names faces on the live camera against registered residents
+    ├── liveness.py           ← photo/screen check before a resident is named (MiniFASNet)
+    ├── liveness_models/      ← the two small liveness models (Apache 2.0, see README there)
     ├── db.py, schema.sql     ← SQLite database and its tables
     ├── seed_user.py          ← create an account
     ├── reset_password.py     ← reset a forgotten password
@@ -227,6 +232,7 @@ Reolink camera → (RTSP) → Flask backend ─┬→ (MJPEG over HTTP) → brow
 ```
 - **Video:** browsers can't play RTSP, so the backend reads the camera stream (`camera.py`) and re-serves it as MJPEG ("one JPEG after another"), which a plain `<img>` can show. It's capped at 10 frames per second.
 - **Recognition** runs on the backend (`recognition.py`). While someone has Live Feed open, a background thread takes the newest camera frame about 3 times a second (shrunk to 1280 px; ~0.15 s per pass on an M2), finds the faces with InsightFace, and compares each one against **every saved angle of every resident**. Each resident's score is their best-matching angle; the best resident at or above the threshold (0.4 for InsightFace) gives the name, otherwise "Unknown". Live Feed polls `GET /recognitions` and draws the boxes on a canvas over the video. The thread stops when nobody has asked for 10 seconds, and frames are never saved.
+- **Liveness (anti-spoofing)** (`liveness.py`): when a face matches a resident, it's cropped from the **full-size** camera frame at two sizes and checked by two small **MiniFASNet** models, which spot what photos and screens leave behind (flat texture, glare, screen pixels, edges). Each pass is one vote; the name is shown once **3 of the last 5** votes say "real" and withheld ("possible photo") once 3 say "fake". Faces under 80 px tall in the full frame are too small to judge and stay Unknown. If the liveness models can't load, names are withheld rather than shown unchecked. Unknown faces skip the check.
 - **Login:** passwords are bcrypt-hashed in SQLite (`users` table). A login returns a random token, kept in the browser's `sessionStorage` and sent as `Authorization: Bearer <token>`. Sessions live in the backend's memory and expire after 30 minutes without activity. Every screen except `/login` is behind a route guard (`RequireAuth` in `AuthContext.jsx`).
 - **The video needs a login too:** an `<img>` can't send headers, so Live Feed first gets a short-lived **stream token** (60 seconds) and puts it in the video URL. An open stream re-checks the session every 5 seconds and stops when you log out.
 - **Register Resident:** the browser's webcam takes one photo per angle; `face-api.js` checks there's exactly one face, lined up with the guide oval, before each photo. The backend (`POST /residents`) checks every photo again with **InsightFace** (`faces.py`): exactly one face per photo, and every angle must look like the same person as the front photo. It stores one face **embedding** per angle in `resident_face_angles`, plus the photos (re-encoded, no metadata) in `data/residents/<id>/`. Recognition on the live feed will compare faces against every saved angle and keep the best match, so a resident seen from the side still matches.
@@ -244,7 +250,7 @@ Authenticated endpoints need `Authorization: Bearer <token>`. A missing or expir
 | `POST /stream-token` | bearer | `{"stream_token", "expires_in": 60}` for opening `/video_feed`. |
 | `GET /video_feed?stream_token=…` | stream token | The MJPEG camera stream. Fetch a new token for each reconnect. |
 | `GET /status` | bearer | `{"camera_online": true\|false}` |
-| `GET /recognitions` | bearer | Who's in view: `{"faces": [{"box": [x, y, w, h], "resident_id", "name", "score"}], "age_seconds", "threshold", "error", "camera_online"}`. `box` is fractions of the frame; `name` is `null` for Unknown. Polling it is what keeps recognition running. |
+| `GET /recognitions` | bearer | Who's in view: `{"faces": [{"box": [x, y, w, h], "status", "resident_id", "name", "score", "liveness"}], "age_seconds", "threshold", "error", "camera_online"}`. `box` is fractions of the frame. `status` is `resident` (name shown), `unknown`, `checking`, `spoof` (looks like a photo/screen), `too_far` or `unverified` (liveness not working); `name` is only set for `resident`. Polling it is what keeps recognition running. |
 | `POST /residents` | bearer | **Multipart** form: `name` (1–100 characters) plus five image files `front`, `left`, `right`, `up`, `down` (each under 5 MB). Each must contain exactly one face, and each angle must match the `front` photo. `201 {"resident": {"id", "name", "angles"}}`. A bad photo gives `400 {"error", "angle", "reason"}` (`missing`, `too_large`, `invalid_image`, `no_face`, `multiple_faces`, `different_person`) so the screen can ask for a retake of just that angle. |
 | `GET /residents` | bearer | `{"residents": [{"id", "name", "registered_by", "angles", "can_delete"}]}`, newest first. |
 | `DELETE /residents/<id>` | bearer | Deletes the resident, their embeddings and photos. Only the user who registered them, or an admin (`403` otherwise). `204`; `404` not found; `409` if recorded detection events refer to them. |
@@ -260,6 +266,9 @@ Authenticated endpoints need `Authorization: Bearer <token>`. A missing or expir
 | `FACE_BACKEND` | `insightface` | Face library for Register Resident: `insightface` (most accurate in our tests; pinned to 1.0.1, the tested version) or `opencv` (YuNet + SFace; ~7x faster, lighter). InsightFace's pretrained models are licensed for non-commercial use only. |
 | `FACE_MODELS_DIR` | `models` | Where `faces.py` downloads the face models. Gitignored. |
 | `RECOGNITION_THRESHOLD` | `0.4` (InsightFace), `0.363` (OpenCV) | How similar a camera face must be to a resident's saved angle to be named. Higher = fewer false matches but more residents shown as Unknown. |
+| `LIVENESS_CHECK` | `on` | Set to `off` to name residents without the photo check (for testing recognition alone). |
+| `LIVENESS_THRESHOLD` | `0.5` | How sure the photo check must be that a face is real (0–1). Higher = harder to fool, but real people are flagged more often. |
+| `LIVENESS_MIN_FACE_PX` | `80` | Faces shorter than this (in the full camera frame) are too small to check and stay Unknown. |
 | `RESIDENT_PHOTOS_DIR` | `data/residents` | Where residents' photos are saved. Gitignored (photos of real people). |
 
 **Frontend, `smarthal-frontend/.env.development`** (gitignored): `VITE_BACKEND_URL` (default `http://localhost:5001`).
@@ -275,6 +284,7 @@ They use a fake camera and a temporary database, so they need neither the camera
 ### Things not to break
 - **Keep `crossOrigin` before `src` on the Live Feed `<img>`.** Recognition runs on the backend now, so the browser doesn't read the video's pixels, but if `src` is set first, Safari opens the stream twice. (Register Resident still runs `face-api.js` in the browser, on the webcam.)
 - **When unsure, say Unknown.** Don't lower `RECOGNITION_THRESHOLD` to make matches "work": a stranger labeled as a resident is the failure a security camera must avoid.
+- **Never show a resident's name without the liveness check** while `LIVENESS_CHECK` is on: if the check fails or can't run, the name stays hidden. A photo passing as a resident would defeat the point of recognition.
 - **Port 5001, not Flask's default 5000:** on Mac, AirPlay Receiver uses port 5000.
 - **The backend binds to `127.0.0.1` only** and CORS allows only the frontend's origin. Don't change these to `0.0.0.0` or `*`.
 - **Never commit** `.env`, `.env.development`, `*.db`, `data/`, `models/` or any password. The repo is public, and `data/residents/` holds photos of real people.

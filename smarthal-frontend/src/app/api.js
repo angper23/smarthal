@@ -44,6 +44,11 @@ export async function apiFetch(path, { method = "GET", body, signal } = {}) {
   const sentToken = currentToken;
   if (sentToken) headers.Authorization = `Bearer ${sentToken}`;
 
+  // No backend address configured (e.g. a deploy without VITE_BACKEND_URL):
+  // treat it as "can't reach the server" rather than sending requests to the
+  // website's own host, which would answer with misleading errors
+  if (!BACKEND_URL) throw new NetworkError();
+
   let res;
   try {
     res = await fetch(`${BACKEND_URL}${path}`, {
