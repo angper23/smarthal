@@ -40,20 +40,20 @@ export function EventDetailScreen() {
   const event = mockEventDetails[id || "1"] || mockEventDetails["1"];
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
 
       {/* Header with back button to event history */}
-      <div className="bg-white border-b-2 border-gray-300 p-4 flex items-center gap-3">
+      <div className="bg-window border-b-2 border-border p-4 flex items-center gap-3">
         <button onClick={() => navigate("/event-history")} className="p-1 hover:bg-gray-100 rounded">
-          <ArrowLeft className="w-6 h-6" />
+          <ArrowLeft className="w-6 h-6 text-bgtext" />
         </button>
-        <h1 className="text-2xl">Event Detail</h1>
+        <h1 className="text-2xl text-bgtext">Event Detail</h1>
       </div>
 
       <div className="p-4 space-y-4">
 
         {/* Snapshot image — placeholder image from Unsplash for the prototype */}
-        <div className="bg-white border-2 border-gray-300 rounded-lg overflow-hidden">
+        <div className="bg-white border-2 border-border rounded-lg overflow-hidden">
           <div className="aspect-video bg-gray-200 flex items-center justify-center">
             <ImageWithFallback
               src="https://images.unsplash.com/photo-1558002038-1055907df827"
@@ -61,23 +61,23 @@ export function EventDetailScreen() {
               className="w-full h-full object-cover"
             />
           </div>
-          <div className="p-4 border-t-2 border-gray-300">
-            <p className="text-sm text-gray-600">Snapshot Image</p>
+          <div className="p-4 border-t-2 border-border bg-window">
+            <p className="text-sm text-bgtext">Snapshot Image</p>
           </div>
         </div>
 
         {/* Event info fields */}
-        <div className="bg-white border-2 border-gray-300 rounded-lg p-4 space-y-3">
+        <div className="bg-window border-2 border-border rounded-lg p-4 space-y-3">
 
           {/* When the event happened */}
           <div>
-            <label className="text-sm text-gray-600 block mb-1">Event Timestamp</label>
-            <p>{event.timestamp}</p>
+            <label className="text-sm text-bgtextb block mb-1">Event Timestamp</label>
+            <p className="text-bgtext">{event.timestamp}</p>
           </div>
 
           {/* Whether the person was a known resident or unknown */}
-          <div className="border-t-2 border-gray-200 pt-3">
-            <label className="text-sm text-gray-600 block mb-1">Classification</label>
+          <div className="border-t-2 border-border pt-3">
+            <label className="text-sm text-bgtextb block mb-1">Classification</label>
             <span
               className={`inline-block px-3 py-1 rounded border ${
                 event.classification === "Unknown"
@@ -90,22 +90,22 @@ export function EventDetailScreen() {
           </div>
 
           {/* Description of what happened */}
-          <div className="border-t-2 border-gray-200 pt-3">
-            <label className="text-sm text-gray-600 block mb-1">Description</label>
-            <p>{event.description}</p>
+          <div className="border-t-2 border-border pt-3">
+            <label className="text-sm text-bgtextb block mb-1">Description</label>
+            <p className="text-bgtext">{event.description}</p>
           </div>
 
           {/* Which camera captured the event */}
-          <div className="border-t-2 border-gray-200 pt-3">
-            <label className="text-sm text-gray-600 block mb-1">Location</label>
-            <p>{event.location}</p>
+          <div className="border-t-2 border-border pt-3">
+            <label className="text-sm text-bgtextb block mb-1">Location</label>
+            <p className="text-bgtext">{event.location}</p>
           </div>
         </div>
 
         {/* Back button */}
         <button
           onClick={() => navigate("/event-history")}
-          className="w-full py-3 bg-gray-800 text-white rounded border-2 border-gray-800 hover:bg-gray-700"
+          className="w-full py-3 bg-panel text-wintext rounded border-2 border-border hover:bg-border"
         >
           Back to Event History
         </button>

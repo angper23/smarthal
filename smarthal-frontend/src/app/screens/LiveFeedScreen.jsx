@@ -209,14 +209,14 @@ export function LiveFeedScreen() {
   const livenessBroken = recognitionError?.startsWith("Liveness");
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
 
       {/* Header with back button and LIVE badge */}
-      <div className="bg-white border-b-2 border-gray-300 p-4 flex items-center gap-3">
+      <div className="bg-window border-b-2 border-border p-4 flex items-center gap-3">
         <button onClick={() => navigate("/dashboard")} className="p-1 hover:bg-gray-100 rounded">
-          <ArrowLeft className="w-6 h-6" />
+          <ArrowLeft className="w-6 h-6 text-bgtext" />
         </button>
-        <h1 className="text-2xl">Live Feed</h1>
+        <h1 className="text-2xl text-bgtext">Live Feed</h1>
         {/* Pulsing LIVE badge to indicate the camera is active */}
         <span className="ml-auto flex items-center gap-1 bg-red-100 text-red-700 px-2 py-0.5 rounded text-sm animate-pulse">
           <Circle className="w-2 h-2 fill-red-600 text-red-600" />
@@ -227,7 +227,7 @@ export function LiveFeedScreen() {
       <div className="p-4 space-y-4">
 
         {/* Status bar — shows camera online and current detection result */}
-        <div className="bg-white border-2 border-gray-300 rounded-lg p-3 flex items-center justify-between">
+        <div className="bg-panel border-2 border-border rounded-lg p-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Circle
               className={`w-3 h-3 ${
@@ -344,10 +344,10 @@ export function LiveFeedScreen() {
             </div>
 
             {/* Footer showing camera info and detection badge */}
-            <div className="p-4 border-t-2 border-gray-300 flex items-center justify-between">
+            <div className="p-4 border-t-2 border-border bg-window flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Resolution: 1080p</p>
-                <p className="text-sm text-gray-600">Location: Main Entrance</p>
+                <p className="text-sm text-bgtextb">Resolution: 1080p</p>
+                <p className="text-sm text-bgtextb">Location: Main Entrance</p>
               </div>
               {/* Who's in view — orange if anyone is Unknown, green if only residents */}
               <div
@@ -366,7 +366,7 @@ export function LiveFeedScreen() {
         {/* Back to dashboard button */}
         <button
           onClick={() => navigate("/dashboard")}
-          className="w-full py-3 bg-gray-800 text-white rounded border-2 border-gray-800 hover:bg-gray-700"
+          className="w-full py-3 bg-panel text-wintext rounded border-2 border-border hover:bg-border"
         >
           Back to Dashboard
         </button>

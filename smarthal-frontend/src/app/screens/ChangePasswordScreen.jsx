@@ -60,41 +60,41 @@ export function ChangePasswordScreen() {
     setLoading(false);
   };
 
-  const inputClass = "w-full px-4 py-2 border-2 border-gray-300 rounded bg-white";
+  const inputClass = "w-full px-4 py-2 border-2 border-gray-300 rounded bg-panel";
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
 
       {/* Header with back button */}
-      <div className="bg-white border-b-2 border-gray-300 p-4 flex items-center gap-3">
+      <div className="bg-window border-b-2 border-border p-4 flex items-center gap-3">
         <button onClick={() => navigate("/dashboard")} className="p-1 hover:bg-gray-100 rounded">
-          <ArrowLeft className="w-6 h-6" />
+          <ArrowLeft className="w-6 h-6 text-bgtext" />
         </button>
-        <h1 className="text-2xl">Change Password</h1>
+        <h1 className="text-2xl text-bgtext">Change Password</h1>
       </div>
 
       <div className="p-4 space-y-4">
 
         {/* Success — shown instead of the form */}
         {done ? (
-          <div className="bg-white border-2 border-green-300 rounded-lg p-4 space-y-3">
-            <p className="flex items-center gap-2 text-green-700 font-medium">
+          <div className="bg-window border-2 border-border rounded-lg p-4 space-y-3">
+            <p className="flex items-center gap-2 text-statusgood font-medium">
               <CheckCircle className="w-5 h-5" />
               Password changed
             </p>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-bgtext">
               Use your new password next time you log in. Any other device that was
               logged in to this account has been signed out.
             </p>
             <button
               onClick={() => navigate("/dashboard")}
-              className="w-full py-3 bg-gray-800 text-white rounded border-2 border-gray-800 hover:bg-gray-700"
+              className="w-full py-3 bg-panel text-wintext rounded border-2 border-border hover:bg-border"
             >
               Back to Dashboard
             </button>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="bg-white border-2 border-gray-300 rounded-lg p-4 space-y-4">
+          <form onSubmit={handleSubmit} className="bg-window border-2 border-gray-300 rounded-lg p-4 space-y-4">
 
             {/* Error message — wrong current password, rule broken, rate limited, or backend down */}
             {error && (
@@ -105,7 +105,7 @@ export function ChangePasswordScreen() {
             )}
 
             <div>
-              <label htmlFor="current-password" className="block text-sm mb-2 text-gray-700">Current password</label>
+              <label htmlFor="current-password" className="block text-sm mb-2 text-bgtext">Current password</label>
               <input
                 id="current-password"
                 type="password"
@@ -119,7 +119,7 @@ export function ChangePasswordScreen() {
             </div>
 
             <div>
-              <label htmlFor="new-password" className="block text-sm mb-2 text-gray-700">New password</label>
+              <label htmlFor="new-password" className="block text-sm mb-2 text-bgtext">New password</label>
               <input
                 id="new-password"
                 type="password"
@@ -135,7 +135,7 @@ export function ChangePasswordScreen() {
             </div>
 
             <div>
-              <label htmlFor="confirm-password" className="block text-sm mb-2 text-gray-700">Confirm new password</label>
+              <label htmlFor="confirm-password" className="block text-sm mb-2 text-bgtext">Confirm new password</label>
               <input
                 id="confirm-password"
                 type="password"
@@ -151,7 +151,7 @@ export function ChangePasswordScreen() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-gray-800 text-white rounded border-2 border-gray-800 hover:bg-gray-700 disabled:opacity-60 disabled:cursor-wait"
+              className="w-full py-3 bg-panel text-wintext rounded border-2 border-border hover:bg-border disabled:opacity-60 disabled:cursor-wait"
             >
               {loading ? "Changing…" : "Change Password"}
             </button>
